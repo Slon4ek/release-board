@@ -1,0 +1,51 @@
+# --- Секреты и локальные пароли ---
+.env
+.env.*
+!.env.example
+kubeconfig
+*.kubeconfig
+kubeconfig-*
+secrets
+*.key
+*.pem
+*.p12
+*.pfx
+deploy/local/secret-values.yaml
+
+# --- Логи ---
+*.log
+
+# --- Дампы базы и данные ---
+*.dump
+*.backup
+*.sql
+*.sql.gz
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# --- Кэш проверок ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Сгенерированные манифесты и артефакты Helm ---
+deploy/rendered/
+*.tgz
+
+# --- Локальное состояние инструментов ---
+.trivy/
+
+# --- IDE и ОС ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
