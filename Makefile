@@ -1,4 +1,4 @@
-PYTHON := $(shell if [ -x "$(CURDIR)/.venv/bin/python" ]; then echo "$(CURDIR)/.venv/bin/python"; else echo python3; fi)
+PYTHON := $(shell if [ -x "$(CURDIR)/.venv/bin/python" ]; then echo "$(CURDIR)/.venv/bin/python"; else command -v python3 || echo python3; fi)
 
 .PHONY: help install lint format typecheck test test-unit test-integration check all migrate-up migrate-down test-db
 
@@ -32,7 +32,7 @@ format:
 	$(PYTHON) -m ruff format .
 
 typecheck:
-	$(PYTHON) -m pyright --pythonpath $(PYTHON) src/
+	$(PYTHON) -m pyright --pythonpath $(shell command -v $(PYTHON)) src/
 
 test:
 	$(PYTHON) -m pytest -v
