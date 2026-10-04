@@ -10,6 +10,30 @@ jobs:
   check:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: release_board_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d release_board_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 30s
+
+    env:
+      MODE: TEST
+      DB_NAME: release_board_test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: localhost
+      DB_PORT: "5432"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -30,3 +54,6 @@ jobs:
 
       - name: Typecheck
         run: make typecheck
+
+      - name: Test
+        run: make test
