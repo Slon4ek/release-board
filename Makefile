@@ -1,24 +1,28 @@
 PYTHON := $(shell if [ -x "$(CURDIR)/.venv/bin/python" ]; then echo "$(CURDIR)/.venv/bin/python"; else command -v python3 || echo python3; fi)
 
-.PHONY: help install lint format typecheck test test-unit test-integration check all migrate-up migrate-down test-db
+.PHONY: help install install-dev lint format typecheck test test-unit test-integration check all migrate-up migrate-down test-db
 
 help:
 	@echo "Команды:"
-	@echo "  make install          — установить зависимости"
-	@echo "  make lint             — проверить стиль (без правок)"
-	@echo "  make format           — отформатировать код"
-	@echo "  make typecheck        — проверить типы (pyright)"
-	@echo "  make test             — все тесты"
-	@echo "  make test-unit        — только unit-тесты"
-	@echo "  make test-integration — только интеграционные тесты"
-	@echo "  make check            — lint + typecheck + test"
-	@echo "  make all              — format + check (перед коммитом)"
-	@echo "  make migrate-up       — применить миграции"
-	@echo "  make migrate-down     — откатить миграции"
-	@echo "  make test-db          — создать тестовую БД (для make test)"
+	@echo "  make install           — установить runtime-зависимости"
+	@echo "  make install-dev       — установить зависимости для разработки (включая runtime)"
+	@echo "  make lint              — проверить стиль (без правок)"
+	@echo "  make format            — отформатировать код"
+	@echo "  make typecheck         — проверить типы (pyright)"
+	@echo "  make test              — все тесты"
+	@echo "  make test-unit         — только unit-тесты"
+	@echo "  make test-integration  — интеграционные тесты (API + ready + миграции)"
+	@echo "  make check             — lint + typecheck + test"
+	@echo "  make all               — format + check (перед коммитом)"
+	@echo "  make migrate-up        — применить миграции"
+	@echo "  make migrate-down      — откатить миграции"
+	@echo "  make test-db           — создать тестовую БД (для make test)"
 
 install:
 	$(PYTHON) -m pip install -r requirements.lock
+
+install-dev:
+	$(PYTHON) -m pip install -r requirements-dev.lock
 
 lint:
 	$(PYTHON) -m ruff check .
@@ -41,7 +45,7 @@ test-unit:
 	$(PYTHON) -m pytest tests/test_validation.py -v
 
 test-integration:
-	$(PYTHON) -m pytest tests/test_api.py tests/test_ready.py -v
+	$(PYTHON) -m pytest tests/test_api.py tests/test_ready.py tests/test_migration.py -v
 
 check: lint typecheck test
 

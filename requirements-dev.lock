@@ -1,0 +1,11 @@
+-r requirements.lock
+
+httpx==0.28.1
+iniconfig==2.3.0
+nodeenv==1.11.0
+pluggy==1.6.0
+pyright==1.1.414
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-dotenv==0.5.2
+ruff==0.16.10

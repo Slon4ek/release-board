@@ -71,7 +71,7 @@ async def change_release_status(
     db: AsyncSession,
     release_id: uuid.UUID,
     target: ReleaseStatus,
-) -> Release:
+):
     release = await get_release(db, release_id)
     current = ReleaseStatus(release.status)
     if target not in VALID_TRANSITIONS.get(current, set()):

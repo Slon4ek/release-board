@@ -1,3 +1,4 @@
+import logging
 import os
 import subprocess
 
@@ -7,6 +8,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.database import async_session_maker_null_pool
 from src.schemas import VersionResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
 
@@ -41,6 +44,7 @@ async def ready(response: Response) -> dict[str, str]:
             await session.execute(text("SELECT 1"))
         return {"status": "ready"}
     except SQLAlchemyError:
+        logger.exception("Database health check failed")
         response.status_code = 503
         return {"status": "unavailable"}
 
