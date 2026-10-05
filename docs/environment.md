@@ -27,22 +27,33 @@
 
 ## Пакеты Python
 
-| Пакет | Версия |
-| --- | --- |
-| fastapi | 0.142.2 |
-| uvicorn | 0.54.0 |
-| SQLAlchemy | 2.1.3 |
-| psycopg | 3.3.6 |
-| pydantic | 2.13.5 |
-| pydantic-settings | 2.15.0 |
-| alembic | 1.20.0 |
-| httpx | 0.28.1 |
-| pytest-asyncio | 1.4.0 |
-| pytest-dotenv | 0.5.2 |
+| Пакет | Версия | Lock |
+| --- | --- | --- |
+| fastapi | 0.142.2 | runtime |
+| uvicorn | 0.54.0 | runtime |
+| SQLAlchemy | 2.1.3 | runtime |
+| psycopg | 3.3.6 | runtime |
+| pydantic | 2.13.5 | runtime |
+| pydantic-settings | 2.15.0 | runtime |
+| alembic | 1.20.0 | runtime |
+| httpx | 0.28.1 | dev |
+| pytest-asyncio | 1.4.0 | dev |
+| pytest-dotenv | 0.5.2 | dev |
 
 Все версии зафиксированы точными номерами релизов, без бета-версий и без
-плавающих диапазонов. Источник истины — `requirements.lock` (36 строк),
-согласованный с `pyproject.toml`.
+плавающих диапазонов. Источник истины — два lock-файла, согласованные
+с `pyproject.toml`:
+
+- `requirements.lock` — 27 пакетов, только runtime: fastapi, uvicorn,
+  SQLAlchemy, psycopg, pydantic, alembic и их транзитивные зависимости.
+  В Docker-образ попадёт этот файл (этап 3).
+- `requirements-dev.lock` — включает runtime через `-r requirements.lock`
+  и добавляет 9 пакетов разработки: pytest, pytest-asyncio, pytest-dotenv,
+  httpx, ruff, pyright и их транзитивные (pluggy, iniconfig, nodeenv).
+
+Локально `make install` ставит только runtime-зависимости, `make install-dev` —
+все. В CI устанавливается `requirements-dev.lock`: шагу `Test` нужны pytest и
+httpx.
 
 Ранее в `pyproject.toml` была объявлена экстра `uvicorn[standard]`, которая тянет
 `uvloop`, `httptools`, `watchfiles` и `websockets`. Ни одна из них не попадала в
