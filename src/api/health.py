@@ -44,7 +44,7 @@ async def ready(response: Response) -> dict[str, str]:
             await session.execute(text("SELECT 1"))
         return {"status": "ready"}
     except SQLAlchemyError:
-        logger.debug("Database health check failed")
+        logger.exception("Database health check failed")
         response.status_code = 503
         return {"status": "unavailable"}
 
