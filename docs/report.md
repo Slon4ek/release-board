@@ -13,7 +13,7 @@ URL: `https://github.com/Slon4ek/release-board`.
 
 Проверки выполнены локально и подтверждены в `main`: сервис, тесты и CI с шагом
 `Test` влиты PR #7. Срез этапа 1 — `29fd6a0` от 2026-10-04; на 2026-10-05
-текущий `main` — `eba9367` (см. таблицу этапа 2).
+текущий `main` — `6380e10` (см. таблицу этапа 2).
 
 | Команда | Код завершения | Подтверждающий фрагмент |
 | --- | --- | --- |
@@ -71,6 +71,8 @@ Merge-коммитов нет.
 | `0538926` | `logger.exception` → `logger.debug` в `/ready` | [#11](https://github.com/Slon4ek/release-board/pull/11) |
 | `eba9367` | `git revert 0538926`: возврат `logger.exception` в `/ready` | [#12](https://github.com/Slon4ek/release-board/pull/12) |
 | `7c3fef9` | объединение формулировок Swagger в README — squash ветки `fix/readme-wording` (пункт 4) | [#13](https://github.com/Slon4ek/release-board/pull/13) |
+| `21d6f87` | отчёт: журнал работы с remote (пункты 1–6), срезы #8–#13, вводная этапа 1 | [#14](https://github.com/Slon4ek/release-board/pull/14) |
+| `6380e10` | cherry-pick коммита `49ab4f7`: уточнение описания `make test-db` в README (пункт 7) | [#15](https://github.com/Slon4ek/release-board/pull/15) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.
@@ -111,10 +113,9 @@ pytest, ruff, pyright, httpx и их транзитивные зависимос
 ### Работа с remote и совместные изменения (ТЗ, строки 154–163)
 
 Второй клон — полная копия origin: `/home/slon4ek/PycharmProjects/release-board-2`.
-Пункты 1–6 выполнены; ветки пунктов 1–3 (`feature/api`) и 4
+Пункты 1–8 выполнены; ветки пунктов 1–3 (`feature/api`) и 4
 (`fix/readme-wording`) слиты squash-PR #10 и #13, `fix/readme-clarity`
 удалена без слияния — её содержимое вошло в `fix/readme-wording`.
-Пункты 7–8 в работе.
 
 | Пункт | Что отработано | Ключевые SHA и подтверждение |
 | --- | --- | --- |
@@ -124,24 +125,26 @@ pytest, ruff, pyright, httpx и их транзитивные зависимос
 | 4. Конфликт | две ветки (`fix/readme-wording`, `fix/readme-clarity`) правят строку 20 README; rebase остановился на маркерах строк 20–24. Две попытки разруления через GUI оставили версию upstream — коммит становился пустым и пропускался; итоговое разруление — механическая замена диапазона маркеров одной строкой. `72 passed`, финальный push прошёл как fast-forward | `7150d5a`, `8b14c29` → `85e7c20` |
 | 5. Публичная отмена | PR #11 перевёл `logger.exception` в `logger.debug` на `/ready`; PR #12 — `git revert 0538926`, `1 insertion(+), 1 deletion(-)`, строка вернулась к `logger.exception`. `72 passed` | #11 `0538926`, #12 `eba9367` |
 | 6. Локальная история | локальная ветка `feature/reflog-lab`: три коммита, `rebase -i HEAD~3` с `fixup` → два коммита; `reset --hard HEAD~1` сделал верхний коммит недостижимым; `reflog` показал его SHA; `switch -c feature/reflog-restore 49ab4f7` восстановил веткой. Reflog локальный, в `origin` не попадает | `49ab4f7` |
+| 7. Перенос исправления | `git cherry-pick 49ab4f7` на локальную `fix/test-db-docs` → новый коммит с тем же диффом `README.md\| 4 ++--`; проверка `git show --stat` и `git diff main`, `72 passed`, push. Источник `49ab4f7` остался на месте, история ветки не переписывалась. | ветка `e731b5b` → на `main` `6380e10` (PR #15) |
+| 8. Поиск регрессии | цепочка из четырёх коммитов на локальной `fix/bisect-chain` (D сдвигает строку валидации, добавляет тест с предсказуемым падением); `git bisect start` + `git bisect run python -m pytest tests/test_validation.py::TestStatusTransitions::test_planned_cannot_rollback -q` нашёл первого плохого коммита за 2 шага из 4 (`log₂4 = 2`); `git bisect reset`, ветка удалена. Тест без БД, поэтому годится для `run` | `a44845f` (первый плохой) |
 
 Практический вывод: пока истории расходятся, после rebase нужен
 `--force-with-lease`; когда родитель уже лежит на сервере, обычный push
 проходит как fast-forward. Коммит, ставший пустым, Git не создаёт — защита от
 тихой ошибки при неверно выбранной стороне конфликта.
 
-### Остаток этапа
+### Итоги этапа 2
 
-- Пункты 7–8 работы с remote: cherry-pick с проверкой diff и тестов до
-  push, поиск регрессии через `git bisect`.
-- `docs/runbooks/git-recovery.md` со сравнением `revert`, `reset`, `restore`,
-  `reflog`, `cherry-pick` и `rebase` (ТЗ, строка 178).
-- Уборка временных веток: `fix/readme-wording` (слита PR #13) и
-  `fix/readme-clarity` (удалена) убраны; `feature/reflog-lab` и
-  `feature/reflog-restore` — после пункта 7.
-
-CONTRIBUTING.md, шаблон PR и README.md слиты PR #9; дополнение документации
-командами Makefile — squash-PR #10.
+- Пункты 1–8 выполнены: заранее сжатая сводка по ним — в таблице выше.
+- `docs/runbooks/git-recovery.md` создан (ТЗ, строка 178): сравнение
+  `revert`, `reset`, `restore`, `reflog`, `cherry-pick`, `rebase` —
+  отдельный PR, номер будет подставлен при слиянии.
+- Уборка временных веток завершена: `fix/readme-wording` (PR #13),
+  `fix/readme-clarity`, `fix/test-db-docs` (PR #15), `feature/reflog-lab`,
+  `feature/reflog-restore`, `fix/bisect-chain` — все удалены, в обоих
+  клонах остаётся только `main`.
+- Документация этапа: `CONTRIBUTING.md`, шаблон PR и `README.md` слиты
+  PR #9; дополнение командами Makefile — PR #10; журнал remote — PR #14.
 
 ---
 
