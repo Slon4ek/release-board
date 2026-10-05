@@ -12,7 +12,8 @@ URL: `https://github.com/Slon4ek/release-board`.
 ## Этап 1. Сервис и тесты
 
 Проверки выполнены локально и подтверждены в `main`: сервис, тесты и CI с шагом
-`Test` влиты PR #7. Текущий `main` — `29fd6a0` от 2026-10-04.
+`Test` влиты PR #7. Срез этапа 1 — `29fd6a0` от 2026-10-04; на 2026-10-05
+текущий `main` — `eba9367` (см. таблицу этапа 2).
 
 | Команда | Код завершения | Подтверждающий фрагмент |
 | --- | --- | --- |
@@ -64,6 +65,12 @@ Merge-коммитов нет.
 | `59cd029` | HTTP API, сервисный слой, обработка доменных ошибок | [#5](https://github.com/Slon4ek/release-board/pull/5) |
 | `5424302` | отчёт, ADR, окружение | [#6](https://github.com/Slon4ek/release-board/pull/6) |
 | `29fd6a0` | тесты DELETE и 409, сверка миграции с моделью, шаг Test в CI, отчёт | [#7](https://github.com/Slon4ek/release-board/pull/7) |
+| `7da226f` | разделение lock-файлов, CI: concurrency, timeout, GIT_SHA, кэш pip; `BASE_DIR` для `.env`; `logger.exception` в `/ready`; `make install-dev` | [#8](https://github.com/Slon4ek/release-board/pull/8) |
+| `59afb8d` | `CONTRIBUTING.md`, шаблон PR, `README.md` | [#9](https://github.com/Slon4ek/release-board/pull/9) |
+| `3e33dff` | README: `make test-db` в таблице команд; CONTRIBUTING: предупреждение о перезаписи файлов `make format` — squash ветки `feature/api` | [#10](https://github.com/Slon4ek/release-board/pull/10) |
+| `0538926` | `logger.exception` → `logger.debug` в `/ready` | [#11](https://github.com/Slon4ek/release-board/pull/11) |
+| `eba9367` | `git revert 0538926`: возврат `logger.exception` в `/ready` | [#12](https://github.com/Slon4ek/release-board/pull/12) |
+| `7c3fef9` | объединение формулировок Swagger в README — squash ветки `fix/readme-wording` (пункт 4) | [#13](https://github.com/Slon4ek/release-board/pull/13) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.
@@ -101,12 +108,40 @@ pytest, ruff, pyright, httpx и их транзитивные зависимос
 `make install` ставит только runtime-зависимости, `make install-dev` — все.
 Цель разделения: dev-пакеты не должны попадать в Docker-образ на этапе 3.
 
-### Что ещё предстоит в этом этапе
+### Работа с remote и совместные изменения (ТЗ, строки 154–163)
 
-- Git-упражнения с двумя клонами, включая разрешение конфликта при rebase.
+Второй клон — полная копия origin: `/home/slon4ek/PycharmProjects/release-board-2`.
+Пункты 1–6 выполнены; ветки пунктов 1–3 (`feature/api`) и 4
+(`fix/readme-wording`) слиты squash-PR #10 и #13, `fix/readme-clarity`
+удалена без слияния — её содержимое вошло в `fix/readme-wording`.
+Пункты 7–8 в работе.
+
+| Пункт | Что отработано | Ключевые SHA и подтверждение |
+| --- | --- | --- |
+| 1. Tracking | `push -u origin feature/api`; в обоих клонах `* feature/api` со связью `[origin/feature/api]` | `59afb8d` |
+| 2. Совместная ветка | коммит во втором клоне и `push`; в первом `fetch` даёт `[позади 1]`, `log feature/api..origin/feature/api` и `diff` показывают ровно одну строку до интеграции | `bf72f93` |
+| 3. Non-fast-forward | push отклонён (non-fast-forward), затем `fetch`, `rebase origin/feature/api`, обычный push. Линейная история, merge-коммитов нет, force на `main` не применялся | `0bd600d` → пересоздан `8a469f6` |
+| 4. Конфликт | две ветки (`fix/readme-wording`, `fix/readme-clarity`) правят строку 20 README; rebase остановился на маркерах строк 20–24. Две попытки разруления через GUI оставили версию upstream — коммит становился пустым и пропускался; итоговое разруление — механическая замена диапазона маркеров одной строкой. `72 passed`, финальный push прошёл как fast-forward | `7150d5a`, `8b14c29` → `85e7c20` |
+| 5. Публичная отмена | PR #11 перевёл `logger.exception` в `logger.debug` на `/ready`; PR #12 — `git revert 0538926`, `1 insertion(+), 1 deletion(-)`, строка вернулась к `logger.exception`. `72 passed` | #11 `0538926`, #12 `eba9367` |
+| 6. Локальная история | локальная ветка `feature/reflog-lab`: три коммита, `rebase -i HEAD~3` с `fixup` → два коммита; `reset --hard HEAD~1` сделал верхний коммит недостижимым; `reflog` показал его SHA; `switch -c feature/reflog-restore 49ab4f7` восстановил веткой. Reflog локальный, в `origin` не попадает | `49ab4f7` |
+
+Практический вывод: пока истории расходятся, после rebase нужен
+`--force-with-lease`; когда родитель уже лежит на сервере, обычный push
+проходит как fast-forward. Коммит, ставший пустым, Git не создаёт — защита от
+тихой ошибки при неверно выбранной стороне конфликта.
+
+### Остаток этапа
+
+- Пункты 7–8 работы с remote: cherry-pick с проверкой diff и тестов до
+  push, поиск регрессии через `git bisect`.
 - `docs/runbooks/git-recovery.md` со сравнением `revert`, `reset`, `restore`,
-  `reflog`, `cherry-pick` и `rebase`.
-- `CONTRIBUTING.md` и шаблон PR (ТЗ, строка 150).
+  `reflog`, `cherry-pick` и `rebase` (ТЗ, строка 178).
+- Уборка временных веток: `fix/readme-wording` (слита PR #13) и
+  `fix/readme-clarity` (удалена) убраны; `feature/reflog-lab` и
+  `feature/reflog-restore` — после пункта 7.
+
+CONTRIBUTING.md, шаблон PR и README.md слиты PR #9; дополнение документации
+командами Makefile — squash-PR #10.
 
 ---
 
@@ -121,8 +156,8 @@ pytest, ruff, pyright, httpx и их транзитивные зависимос
 | Молчаливый откат настроек при ненайденном `.env` | Запуск с рабочим каталогом `src/` приводил к подстановке `DB_USER=postgres`; такой роли в базе нет, и `/ready` отвечал 503 | только при запуске из исходников: относительный путь `env_file=".env"` разрешается от рабочего каталога | исправлено: `env_file` указывает на `BASE_DIR / ".env"` — абсолютный путь от расположения `src/config.py` |
 | `/ready` гасит исключение без логирования | Любая ошибка превращалась в голый 503, причина терялась полностью | только при запуске из исходников без Docker | исправлено: в `except SQLAlchemyError` добавлен `logger.exception` с трейсбеком |
 
-Оба исправления, а также разделение lock-файлов подготовлены отдельным
-фикс-коммитом; после его слияния сюда будет подставлен номер PR.
+Все перечисленные исправления и разделение lock-файлов слиты единым срезом —
+PR #8 (`7da226f`).
 
 ---
 
