@@ -109,6 +109,7 @@ make check
 В CI job `check` (`.github/workflows/ci.yml`) выполняет те же три шага на
 каждый PR — сервис PostgreSQL 16, переменные `MODE=TEST` и
 `DB_NAME=release_board_test`. Слияние возможно только после зелёного `check`.
+Команда `make format` перезаписывает файлы — в CI она не используется.
 
 ## Защита ветки main
 

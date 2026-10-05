@@ -60,6 +60,7 @@ make check     # lint + typecheck + test
 | `make typecheck` | pyright в strict-режиме |
 | `make test` | pytest: валидация, API, readiness, миграции |
 | `make check` | lint + typecheck + test |
+| `make test-db` | создать тестовую БД release_board_test |
 | `make migrate-up` | применить миграции Alembic |
 | `make migrate-down` | откатить миграции Alembic |
 
