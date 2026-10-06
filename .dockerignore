@@ -1,0 +1,7 @@
+*
+!src
+!src/**
+!migrations
+!migrations/**
+!requirements.lock
+!alembic.ini

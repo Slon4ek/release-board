@@ -13,7 +13,7 @@ URL: `https://github.com/Slon4ek/release-board`.
 
 Проверки выполнены локально и подтверждены в `main`: сервис, тесты и CI с шагом
 `Test` влиты PR #7. Срез этапа 1 — `29fd6a0` от 2026-10-04; на 2026-10-05
-текущий `main` — `6380e10` (см. таблицу этапа 2).
+текущий `main` — `d0a5cbe` (см. таблицу этапа 2).
 
 | Команда | Код завершения | Подтверждающий фрагмент |
 | --- | --- | --- |
@@ -73,6 +73,7 @@ Merge-коммитов нет.
 | `7c3fef9` | объединение формулировок Swagger в README — squash ветки `fix/readme-wording` (пункт 4) | [#13](https://github.com/Slon4ek/release-board/pull/13) |
 | `21d6f87` | отчёт: журнал работы с remote (пункты 1–6), срезы #8–#13, вводная этапа 1 | [#14](https://github.com/Slon4ek/release-board/pull/14) |
 | `6380e10` | cherry-pick коммита `49ab4f7`: уточнение описания `make test-db` в README (пункт 7) | [#15](https://github.com/Slon4ek/release-board/pull/15) |
+| `d0a5cbe` | runbook `docs/runbooks/git-recovery.md` (ТЗ, строка 178) и обновление отчёта | [#16](https://github.com/Slon4ek/release-board/pull/16) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.
@@ -136,9 +137,9 @@ pytest, ruff, pyright, httpx и их транзитивные зависимос
 ### Итоги этапа 2
 
 - Пункты 1–8 выполнены: заранее сжатая сводка по ним — в таблице выше.
-- `docs/runbooks/git-recovery.md` создан (ТЗ, строка 178): сравнение
-  `revert`, `reset`, `restore`, `reflog`, `cherry-pick`, `rebase` —
-  отдельный PR, номер будет подставлен при слиянии.
+- `docs/runbooks/git-recovery.md` создан и слит PR #16 (`d0a5cbe`):
+  сравнение `revert`, `reset`, `restore`, `reflog`, `cherry-pick`,
+  `rebase` (ТЗ, строка 178).
 - Уборка временных веток завершена: `fix/readme-wording` (PR #13),
   `fix/readme-clarity`, `fix/test-db-docs` (PR #15), `feature/reflog-lab`,
   `feature/reflog-restore`, `fix/bisect-chain` — все удалены, в обоих
@@ -164,7 +165,189 @@ PR #8 (`7da226f`).
 
 ---
 
-## Этапы 3-8
+## Этап 3. Контейнер
 
-Записи добавляются по мере выполнения. Разделы заведены заранее, чтобы итоговая
-сводка не собиралась по памяти.
+Дата работ: 2026-10-05 – 2026-10-06.
+
+### Сборка образа (ТЗ, этап 3, п. 1–4)
+
+`Dockerfile` — multi-stage, обе стадии от закреплённого базового образа:
+
+```text
+python:3.12.14-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e
+```
+
+Digest, а не тег: содержимое базы зафиксировано байт-в-байт, перезапись
+тега при пересборке невозможна.
+
+- **`builder`**: в отдельный venv (`/opt/venv`) ставится только
+  `requirements.lock` — 27 runtime-пакетов. `requirements-dev.lock`
+  в образ не попадает: цель разделения lock-файлов из среза 8 выполнена.
+- **`runtime`**: копируется только готовый venv, `src/`, `migrations/`,
+  `alembic.ini`. Ни pip, ни компиляторов, ни `.git`, ни `.env`, ни тестов.
+  Слой обновления ОС: `apt-get update && apt-get upgrade -y
+  --no-install-recommends && rm -rf /var/lib/apt/lists/*` (добавлен после
+  первого скана Trivy, см. ниже).
+- **Непривилегированный пользователь**: `useradd --system --uid 10001
+  --no-create-home --shell /usr/sbin/nologin app`, далее `USER app`.
+- **Версия и Git SHA при сборке**: `--build-arg APP_VERSION=1.0.0
+  --build-arg GIT_SHA=$(git rev-parse --short HEAD)` → `ARG`/`ENV` →
+  `src/api/health.py` читает через `os.getenv`.
+- **`.dockerignore`** — whitelist (`*` + `!src` `!migrations`
+  `!requirements.lock` `!alembic.ini`): build context = 57.88 kB,
+  `.git`, `.env`, тесты и кэши физически не доезжают до сборки.
+  Требование ТЗ «не копируй `.git`, кэш, тестовые данные, `.env` в build
+  context» выполнено конструктивно.
+
+Команды и результаты:
+
+```text
+make docker-build → exit 0, 28.2s (15/15 слоёв); после правки Dockerfile
+                    пересборка 12.7s, builder полностью CACHED
+make docker-run   → контейнер 9d70039b1d5b, порт 8000
+make docker-version → {"version":"1.0.0","git_sha":"d0a5cbe"}
+docker exec release-board id → uid=10001(app) gid=999(app)
+docker inspect health → healthy
+```
+
+`git_sha=d0a5cbe` совпадает с `git rev-parse --short HEAD` для `main` —
+цепочка build-arg → env → ответ `/version` подтверждена.
+
+### Завершение по SIGTERM (ТЗ, этап 3, п. 5)
+
+```text
+(for i in $(seq 1 60); do curl ... /live; done > flow.log) &  # фоновый поток
+time docker stop release-board
+→ real 0m0.448s        # grace 10s не исчерпан, SIGKILL не понадобился
+docker inspect → ExitCode=0
+docker logs:
+  Shutting down
+  Waiting for application shutdown.
+  Application shutdown complete.
+  Finished server process [1]
+поток: 6×200 до SIGTERM, 1×(000/ERR) после закрытия listen-сокета,
+       ни один запрос не завис (все --max-time 2 отработали)
+```
+
+`CMD` записан в exec-форме (`["python", "-m", "uvicorn", ...]`), поэтому
+uvicorn — PID 1 и получает SIGTERM напрямую; в shell-форме сигнал
+поглотил бы `/bin/sh` и пришлось бы убивать процесс через SIGKILL.
+
+### Healthcheck (ТЗ, этап 3, п. 6)
+
+Реализован: `HEALTHCHECK --interval=30s --timeout=3s --start-period=10s
+--retries=3` на `/live` через `python -c urllib.request` (в slim-образе
+нет curl/wget). `/live` выбран вместо `/ready` намеренно: `/ready`
+зависит от PostgreSQL, и healthcheck контейнера не должен падать из-за
+здоровья отдельного сервиса — проверка готовности с учётом базы
+относится к Kubernetes probes (этап 4).
+
+### Скан Trivy (ТЗ, этап 3, п. 7)
+
+Инструмент: **Trivy 0.75.0** (закреплённая версия, запуск в контейнере
+`aquasec/trivy:0.75.0`, кэш в `.trivy/` — в `.gitignore`).
+База уязвимостей: schema 2, `UpdatedAt 2026-10-05 19:07 UTC`,
+скачана `2026-10-05 20:13 UTC`.
+
+```text
+make docker-scan → aquasec/trivy:0.75.0 image --exit-code 1
+                   --severity HIGH,CRITICAL release-board:1.0.0
+```
+
+Первый скан: **Total 63 (HIGH: 58, CRITICAL: 5)** — все находки в
+ОС-слое `debian 12.15`; Python-пакеты: 12 находок, все LOW/MEDIUM,
+**HIGH: 0, CRITICAL: 0**.
+
+Разбор CRITICAL:
+
+| Пакет | CVE | Статус | Действие |
+| --- | --- | --- | --- |
+| `perl-base` | CVE-2026-13221, CVE-2026-42496, CVE-2026-8376 | `fixed` (`5.36.0-7+deb12u4`) | закрыты обновлением ОС |
+| `libsqlite3-0` | CVE-2025-7458 | `affected` — фикса нет | остаётся, разбор ниже |
+| `zlib1g` | CVE-2023-45853 | `will_not_fix` | остаётся, разбор ниже |
+
+Принятая мера — слой `apt-get upgrade` в Dockerfile; `apt-get -s upgrade`
+показал 5 обновляемых пакетов. Пересборка и повторный скан:
+**Total 55 (HIGH: 53, CRITICAL: 2)** — perl-base закрыт. `make docker-scan`
+завершается с exit 1: команда настроена падать при остатке HIGH/CRITICAL,
+игнор запрещён.
+
+Состав остатка по статусам: **`fixed` — 0** (догонять в репозитории нечего,
+обновление исчерпано), `affected` — 47, `fix_deferred` — 7,
+`will_not_fix` — 1:
+
+```text
+affected:      bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1,
+               mount, util-linux, util-linux-extra, libncursesw6,
+               ncurses-base, ncurses-bin, libtinfo6, libssl3, openssl,
+               libsqlite3-0
+fix_deferred:  gzip, libacl1, libsystemd0, libudev1, libsqlite3-0,
+               perl-base
+will_not_fix:  zlib1g
+```
+
+Письменный разбор остатка (ТЗ: «Не игнорируй находки уровня
+high/critical без письменного разбора»):
+
+1. **Фиксов в репозитории нет** — все 55 находок имеют статус `affected`
+   (Debian признал уязвимым, патча нет), `fix_deferred` (публикация фикса
+   отложена security-командой Debian) или `will_not_fix` (отказ от фикса).
+   Состояние зафиксировано по базе от 2026-10-05.
+2. **Утилиты не используются приложением.** Основная масса —
+   `util-linux`/`mount`/`bsdutils`/`libblkid`/`ncurses`: это системные
+   команды, процесс контейнера — только `python -m uvicorn`, эти бинарники
+   не вызываются.
+3. **`libsqlite3-0`**: в коде используется PostgreSQL (`psycopg`),
+   `import sqlite3` отсутствует; CVE требует обработки враждебного
+   SQLite-файла, а канала загрузки файлов у API нет.
+4. **`zlib1g` (CVE-2023-45853)**: затрагивает `zipOpenNewFileInZip4`
+   (minizip) — сервис не создаёт и не читает zip-архивы.
+5. **`openssl`/`libssl3`**: исходящих внешних TLS-соединений у сервиса
+   нет (база данных — внутри сети, соединение без TLS).
+6. **Факторы смягчения**: контейнер работает от uid 10001; приложение
+   получает входящий трафик только через ClusterIP-Service без вывода
+   наружу (NodePort запрещён, этап 4 — NetworkPolicy); эксплуатация
+   перечисленных уязвимостей требует локального выполнения враждебных
+   сценариев внутри контейнера, для которых у сервиса нет входных точек.
+7. **Дальнейшие меры**: повторный скан при каждом изменении образа
+   (`make docker-scan`), пересборка базового образа при обновлении digest,
+   обновление базы Trivy перед выпуском релиза (этап 7).
+
+### Локальный registry (ТЗ, этап 3, финал)
+
+```text
+k3d registry create release-board-registry.localhost --port 5000
+  → контейнер k3d-release-board-registry.localhost, образ registry:2
+docker tag release-board:1.0.0 release-board-registry.localhost:5000/release-board:1.0.0
+docker push release-board-registry.localhost:5000/release-board:1.0.0
+  → digest: sha256:727536d53a127f4c8aaf40facb6b1f128afd3bda186faae2f8d3034aae8159b5 (size: 856)
+```
+
+Сверка digest:
+
+| Источник | Digest |
+| --- | --- |
+| сборка (`exporting manifest list`) | `sha256:727536d53a12...` |
+| push в registry | `sha256:727536d53a12...` |
+| `docker images --digests` (RepoDigests) | `sha256:727536d53a12...` |
+
+Digest сборки и образа в registry совпадают. В Kubernetes-манифестах
+(этап 4) образ будет указан по этому digest с адресом
+`k3d-release-board-registry.localhost:5000` (k3d добавляет контейнеру
+префикс `k3d-`); тег `1.0.0` сохраняется как метаданные релиза.
+
+### Итоги этапа 3
+
+- Пункты 1–7 ТЗ выполнены: multi-stage от digest-базы, uid 10001,
+  whitelist-контекст, версия/SHA в `/version`, SIGTERM — ExitCode=0 за
+  0.448 с, healthcheck реализован, Trivy 0.75.0 с письменным разбором
+  остатка.
+- Размер образа: 347 MB.
+- Изменения этапа: `Dockerfile`, `.dockerignore`, `Makefile`
+  (таргеты `docker-*`), `docs/environment.md`, `docs/report.md`.
+
+---
+
+## Этапы 4–8
+
+Записи добавляются по мере выполнения.
