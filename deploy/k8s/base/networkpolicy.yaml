@@ -1,0 +1,62 @@
+# ============================================================
+# ДОКУМЕНТ 1: включить изоляцию для ВСЕХ Pod'ов неймспейса
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: release-board-raw
+spec:
+  podSelector: {}                # пустой селектор = «все Pod'ы неймспейса»
+                                 # политика срабатывает на всех → все
+                                 # ИЗОЛИРУЮТСЯ. Без этой политики k8s
+                                 # не запрещает ничего в принципе —
+                                 # остальные NP были бы бесполезны
+  policyTypes:
+    - Ingress                    # ограничиваем только ВХОД; egress
+                                 # (выход, в т.ч. DNS) не трогаем
+---
+# ============================================================
+# ДОКУМЕНТ 2: разрешить вход к API из СВОЕГО неймспейса
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-from-raw
+  namespace: release-board-raw
+spec:
+  podSelector:
+    matchLabels:
+      app: release-board-api    # на какие Pod'ы действует разрешение
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}       # podSelector БЕЗ namespaces = Pod'ы того
+                                # ЖЕ неймспейса (raw). Pod'ы из default
+                                # сюда не попадают → снаружи блок
+      ports:
+        - port: 8000            # порт САМОГО контейнера (не Service 80!):
+                                # политика видит трафик уже после DNAT
+---
+# ============================================================
+# ДОКУМЕНТ 3: разрешить вход к БД только из API
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-from-api
+  namespace: release-board-raw
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres             # базу слушает только API
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: release-board-api   # и НИ ИЗ КАКОГО другого места
+      ports:
+        - port: 5432

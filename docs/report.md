@@ -348,6 +348,111 @@ Digest сборки и образа в registry совпадают. В Kubernete
 
 ---
 
-## Этапы 4–8
+## Этап 4. Kubernetes-манифесты в k3d
+
+Дата работ: 2026-10-06 – 2026-10-08.
+
+### Кластер и цикл проверки манифестов
+
+Кластер описан декларативно в `deploy/k3d/cluster.yaml`: один `server`,
+два `agent`, локальный registry `release-board-registry.localhost:5000`.
+Инструменты закреплены версиями: kubectl 1.35.9, kubeconform 0.8.0.
+Контекст `k3d-release-board`, k3s v1.35.5-k3s1.
+
+Каждый манифест прошёл один цикл:
+
+```text
+kubeconform -strict -summary -kubernetes-version 1.35.5 <файл>
+→ kubectl apply --dry-run=client -f <файл>
+→ kubectl apply -f <файл>
+→ проверка состояния (get / rollout status)
+```
+
+### Манифесты (ТЗ, строки 196–212)
+
+| Объект | Файл | kubeconform |
+| --- | --- | --- |
+| Namespace `release-board-raw` | `deploy/k8s/base/namespace.yaml` | `Valid: 1` |
+| ConfigMap `release-board-config` | `configmap.yaml` | `Valid: 1` |
+| Secret-шаблон (реальный `secret.yaml` создаётся локально и в git не попадает) | `secret.example.yaml` | `Valid: 1` |
+| Service + StatefulSet PostgreSQL, PVC создаётся из `volumeClaimTemplates` | `postgres.yaml` | `Valid: 2` |
+| Deployment (2 реплики, образ по digest) + ClusterIP Service | `api.yaml` | `Valid: 2` |
+| ServiceAccount (без токена) | `serviceaccount.yaml` | `Valid: 1` |
+| PodDisruptionBudget | `pdb.yaml` | `Valid: 1` |
+| NetworkPolicy: default-deny-ingress + allow-api-from-raw + allow-postgres-from-api | `networkpolicy.yaml` | `Valid: 3` |
+
+`kubectl apply --dry-run=client` прогнан по каждому файлу до записи;
+исходники манифестов построчно прокомментированы («что и зачем»).
+
+### Восемь доказательств (ТЗ, строки 214–223)
+
+| № | Доказательство | Как проверялось | Подтверждение |
+| --- | --- | --- | --- |
+| 1 | Кластер и все ноды готовы | `kubectl get nodes` | 3 ноды `Ready`, `v1.35.5+k3s1` |
+| 2 | Rollout готовится за ограниченное время | `kubectl rollout status ... --timeout=120s` | `successfully rolled out` |
+| 3 | Service выбирает именно Pod'ы приложения | `kubectl get endpointslice -l kubernetes.io/service-name=release-board-api` | `ENDPOINTS 10.42.0.6,10.42.2.9`, порт 8000 |
+| 4 | Readiness исключает неготовый Pod из обработки | цикл scale 3→2 с полусекундным срезом подов, slice и флагов | `13:27:19 \| pods: 1/1,1/1,0/1 \| slice: 3 \| ready: true true false` — неготовый Pod попадает в EndpointSlice с `ready: false`, и именно такие записи kube-proxy не программирует в iptables; через секунду флаг стал `true` |
+| 5 | Данные PostgreSQL переживают пересоздание Pod | `INSERT` → `delete pod postgres-0` → `wait` → `SELECT` | `before-pod-recreate \| 2026-10-08 09:47:04.303007 (1 row)`, затем `/ready` → `{"status":"ready"}` |
+| 6 | NetworkPolicy пропускает нужный трафик и режет запрещённый | запросы из `release-board-raw` и из `default` через ClusterIP | разрешённый: `{"status":"alive"}`; запрещённый: `Connection refused` (k3s применяет iptables REJECT, а не DROP — трафик рвётся сразу) |
+| 7 | 30 запросов из отдельного Pod через ClusterIP, удаление Pod после 10-го | `./scripts/k8s-load-test.sh` | итог скрипта: `успехов (200): 30`, `ошибок (FAIL): 0`, `DONE: 1`; запросы 11–30 после удаления `release-board-api-65d6466679-jtvf5` — все `200` |
+| 8 | Лимиты, probes и securityContext в фактическом Pod spec | jsonpath по живому Pod | `resources: {"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"96Mi"}}`; `probes: startup=/live readiness=/ready liveness=/live`; `podSC: runAsUser=10001 runAsNonRoot=true seccomp=RuntimeDefault`; `roRoot=true noEscalate=false caps=["ALL"] sa=release-board-api grace=30` |
+
+### PDB, остановка трафика и доступ (ТЗ, строка 225)
+
+- `preStop: sleep 5` при `terminationGracePeriodSeconds: 30` и
+  максимальной длительности запроса 2 с (`--max-time 2`): под сначала
+  выводится из среза адресов, и только потом получает SIGTERM.
+- PDB `minAvailable: 1` ограничивает **добровольные** прерывания
+  (drain, eviction из-за обслуживания), но не защищает от прямого
+  `kubectl delete pod` и от падения узла — это практическое
+  подтверждение: все тестовые удаления подов проходили напрямую и PDB
+  их не блокировал (см. также `ALLOWED DISRUPTIONS` в выдаче
+  `kubectl get pdb`).
+- NodePort не открывался. Ручные проверки — только через
+  `kubectl port-forward`; нагрузочный тест шёл из отдельного Pod
+  внутри кластера через ClusterIP, потому что port-forward привязан
+  к одному Pod'у и балансировку не доказывает.
+
+### Runbook и воспроизводимость
+
+- `docs/runbooks/kubernetes-diagnostics.md` — порядок диагностики:
+  context → events → workload → describe → logs → endpoints → DNS →
+  сеть → ресурсы → storage; у каждой команды указан закрываемый
+  вопрос и что означает её вывод (exit codes, Reason/Message в Events).
+- `scripts/k8s-load-test.sh` — доказательство п.7 одной командой:
+  прогрев соединения, 30 запросов раз в секунду через ClusterIP из
+  одноразового пода `api-load`, удаление Pod после 10-го запроса,
+  дожидание rollout, счётчики итога и лог в `/tmp/api-load.log`.
+
+### Решения стенда
+
+| Проявление | Причина | Решение |
+| --- | --- | --- |
+| `Key is duplicated` при apply одного файла | потерян разделитель `---` между документами YAML | разделитель восстановлен, `Valid: 2` |
+| StatefulSet не пересоздавал упавший Pod после правки спеки | режим `OrderedReady` создаёт Pod только при нехватке реплик | `kubectl delete pod postgres-0`, затем `wait --for=create` → `wait Ready` |
+| Pod PostgreSQL работал от root и не писал в том | local-path не применяет `fsGroup` | init-контейнер `chown-pg-data` (busybox) |
+| Пробы не срабатывали | k3s не исполняет `sh -c` внутри `CMD-SHELL` | exec-форма `["sh", "-c", ...]` |
+| Первый запрос свежесозданного пода-клиента — `Connection refused` | гонка контейнера при старте (в спокойном состоянии не воспроизводится) | прогрев соединения в скрипте до начала отсчёта; факт зафиксирован: попытка 1 прогрева — `code=000`, успешна со 2-й |
+| `kubectl wait` отвечал `NotFound` сразу после удаления | wait не ждёт появления объекта | сначала `--for=create`, затем `condition=Ready` |
+| После выключения хоста контейнеры `Up`, но API кластера не отвечает | k3s не поднимается автоматически | `docker restart k3d-release-board-server-0` |
+
+### Итоги этапа 4
+
+- Все объекты ТЗ (строки 196–212) применены в `release-board-raw`;
+  каждый прошёл kubeconform закреплённой версии, клиентский dry run
+  и проверку состояния после записи.
+- Восемь доказательств строк 214–223 выполнены (таблица выше), включая
+  п.7: `30` успехов, `0` ошибок, `DONE`.
+- Стенд воспроизводим одной командой на каждый блок: кластер —
+  `deploy/k3d/cluster.yaml`, тест п.7 — `scripts/k8s-load-test.sh`,
+  диагностика — `docs/runbooks/kubernetes-diagnostics.md`.
+- Изменения этапа: `deploy/k3d/cluster.yaml`, `deploy/k8s/base/`
+  (namespace, configmap, secret.example, postgres, api, serviceaccount,
+  pdb, networkpolicy), `scripts/k8s-load-test.sh`,
+  `docs/runbooks/kubernetes-diagnostics.md`, `docs/report.md` — единым PR.
+
+---
+
+## Этапы 5–8
 
 Записи добавляются по мере выполнения.

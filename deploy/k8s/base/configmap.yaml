@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: release-board-config
+  namespace: release-board-raw
+data:
+  MODE: "DEV" # TEST/LOCAL — про локальный запуск, PROD — боевой;
+  DB_HOST: "postgres"
+  DB_PORT: "5432"

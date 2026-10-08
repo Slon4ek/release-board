@@ -13,6 +13,7 @@ secrets
 *.p12
 *.pfx
 deploy/local/secret-values.yaml
+deploy/k8s/base/secret.yaml
 
 # --- Логи ---
 *.log
