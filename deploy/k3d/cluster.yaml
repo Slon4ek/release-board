@@ -1,0 +1,24 @@
+# Декларативный конфиг кластера k3d (ТЗ, этап 4).
+# Создание: k3d cluster create --config deploy/k3d/cluster.yaml
+apiVersion: k3d.io/v1alpha5   # версия схемы конфига k3d (не путать с k8s apiVersion!)
+kind: Simple                  # тип конфига k3d
+metadata:
+  name: release-board         # → контекст k3d-release-board (k3d ставит префикс сам)
+servers: 1                    # узлы control plane («начальник»)
+agents: 2                     # рабочие узлы
+image: rancher/k3s:v1.35.5-k3s1   # версия k3s зафиксирована явно
+kubeAPI:
+  hostIP: "127.0.0.1"
+  hostPort: "6445"            # предсказуемый порт API на хосте
+registries:
+  use:
+    - k3d-release-board-registry.localhost:5000   # registry этапа 3
+options:
+  kubeconfig:                 # ← БЫЛО в корне, должно быть здесь
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true
+  k3s:
+    extraArgs:
+      - arg: "--disable=traefik"
+        nodeFilters:
+          - server:*

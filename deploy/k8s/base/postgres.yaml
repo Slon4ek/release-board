@@ -1,0 +1,160 @@
+# ============================================================
+# ДОКУМЕНТ 1: Service — стабильный адрес базы для Pod'ов API
+# ============================================================
+apiVersion: v1              # Версия API-группы. v1 = core-группа
+                            # (Service, ConfigMap, Secret, Namespace) —
+                            # не меняется между версиями k8s
+kind: Service               # Тип объекта: точка входа к Pod'ам
+metadata:
+  name: postgres            # DNS-имя ВНУТРИ неймспейса — на него
+                            # настроено DB_HOST в ConfigMap
+  namespace: release-board-raw  # Явный неймспейс: без него apply уйдёт
+                            # в «текущий» (часто default) — опечатка
+                            # в имени объекта станет незаметной
+spec:
+  type: ClusterIP           # Виртуальный IP только внутри кластера.
+                            # NodePort/LoadBalancer запрещены ТЗ
+  selector:                 # «Отбор Pod'ов»: Service сам строит
+                            # список адресов по лейблам
+    app: postgres           # ДОЛЖЕН совпадать с template.metadata.labels
+                            # у Pod'а. Не совпало → Endpoints пуст →
+                            # DNS резолвится, а соединить некого
+  ports:
+    - name: postgres        # Имя порта — чтобы на него можно было
+                            # ссылаться из других манифестов
+      port: 5432            # Порт виртипа: сюда стучится клиент
+                            # (= DB_PORT в ConfigMap)
+      targetPort: 5432      # Кудо перенаправить внутри Pod'а
+                            # (= containerPort контейнера)
+---
+# ============================================================
+# ДОКУМЕНТ 2: StatefulSet — «Deployment для живого состояния»
+# ============================================================
+apiVersion: apps/v1         # Группа apps (Deployment/StatefulSet/...),
+                            # не core — версии у неё свои
+kind: StatefulSet           # Стабильные имена Pod'ов + свой диск на
+                            # каждый + строгий порядок действий
+metadata:
+  name: postgres            # Имя контроллера; Pod'ы будут postgres-0,
+                            # postgres-1... (не случайные суффиксы)
+  namespace: release-board-raw
+spec:
+  serviceName: postgres     # Обязательное поле: Service, «куда
+                            # привязывается» сетевая идентичность Pod'ов
+  replicas: 1               # Одна база. Шардирование/репликация — вне ТЗ
+  selector:
+    matchLabels:
+      app: postgres         # Какие Pod'ы под моим контролем. API
+                            # отвергнет манифест, если не совпадёт
+                            # с labels шаблона ниже (защита от рассинхрона)
+  template:                 # === Шаблон Pod'а: из него контроллер
+                            # клепает одинаковые Pod'ы ===
+    metadata:
+      labels:
+        app: postgres       # Лейбл Pod'а — по нему Service (док 1)
+                            # находит его в Endpoints
+    spec:                   # === Спецификация Pod'а (не объекта!) ===
+      securityContext:      # Общие правила БЕЗопасности всех контейнеров
+                            # Pod'а
+        runAsUser: 999      # Запускать от uid 999 — в образе postgres
+                            # таков uid пользователя postgres. НЕ root(0)
+        runAsGroup: 999     # ...и gid 999
+        fsGroup: 999        # kubelet назначит группу при монтировании —
+                            # НО local-path это игнорирует (доказали:
+                            # initdb падал). Оставлено на случай смены
+                            # provisioner на поддерживающий fsGroup;
+                            # фактическую подготовку диска делает
+                            # init-контейнер chown-pg-data
+
+      # --- ПОДГОТОВКА ДИСКА: единственное место, где нужен root ---
+      # Проверено на деле: provisioner local-path ИГНОРИРУЕТ fsGroup,
+      # каталог PVC принадлежит root, рабочий контейнер от 999 писать
+      # не может (initdb падал: Operation not permitted).
+      # Init-контейнеры выполняются ДО основных: chown каталога под
+      # 999 → с кодом 0 → стартует postgres. Живёт доли секунды.
+      initContainers:
+        - name: chown-pg-data
+          image: busybox:1.37.0    # ~2 МБ, нужен только для одной команды
+          command: ["sh", "-c",
+                    "chown -R 999:999 /var/lib/postgresql/data && chmod 700 /var/lib/postgresql/data"]
+          securityContext:
+            runAsUser: 0           # root — только он может chown
+                                   # (CAP_CHOWN в дефолтном наборе root);
+                                   # переопределяет pod-level runAsUser: 999
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: pg-data        # тот же том, что у основного контейнера
+              mountPath: /var/lib/postgresql/data
+
+      containers:
+        - name: postgres    # Имя контейнера — для kubectl logs/exec
+          image: postgres:16.15  # Точный патч (в compose плавал 16):
+                            # пересборка не подкинет сюрприз
+          ports:
+            - containerPort: 5432  # Порт контейнера (справочный:
+                            # реальный трафик идёт через Service)
+          env:              # Переменные окружения контейнера
+            - name: POSTGRES_DB     # Какую базу создать при первом старте
+              valueFrom:
+                secretKeyRef:       # Значение — из Secret, не в YAML
+                  name: release-board-db  # Какой Secret
+                  key: DB_NAME      # Какой ключ (= release_board)
+            - name: POSTGRES_USER   # Каким пользователем создать
+              valueFrom:            # суперпользователя (= release_board)
+                secretKeyRef: {name: release-board-db, key: DB_USER}
+            - name: POSTGRES_PASSWORD  # Его пароль — из Secret
+              valueFrom:
+                secretKeyRef: {name: release-board-db, key: DB_PASSWORD}
+          # --- МОНТИРОВАНИЕ ДИСКА (этого не хватало в первой версии!) ---
+          volumeMounts:             # Подключить том в контейнер
+            - name: pg-data         # Имя = из volumeClaimTemplates ниже
+              mountPath: /var/lib/postgresql/data  # Куда внутри контейнера;
+                            # это же штатный PGDATA образа. Здесь и
+                            # живут данные — на PVC, а не в слое образа
+          # --- ПРОБЫ: три разных вопроса контейнеру ---
+          readinessProbe:           # «Готов принимать подключения?»
+            exec:                   # Проверка ВНУТРИ контейнера...
+              command: ["sh", "-c",
+                        "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+                            # ...оболочкой: pg_isready — штатный пинг PG.
+                            # "sh -c" нужен, чтобы $ подставилось из
+                            # окружения (exec-форма без shell не умеет)
+            initialDelaySeconds: 5  # Не проверять первые 5 с (initdb занят)
+            periodSeconds: 5        # Дальше — раз в 5 с
+            # Провал N раз подряд → Pod получит label not-ready и Service
+            # перестанет слать на него запросы (пока не оправится)
+          livenessProbe:            # «Жив ли?» — иной вопрос и иной итог:
+            exec:                   # провал → РЕСТАРТ контейнера
+              command: ["sh", "-c",
+                        "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            initialDelaySeconds: 15 # Больше, чем у readiness: пока база
+                            # только создаётся — не убивать лживностью
+            periodSeconds: 10
+          resources:
+            requests:       # Заявка планировщику: «зарезервируй»
+              cpu: 100m     # 0.1 ядра — иначе Pod может не встать,
+                            # если нода «занята» по учёту requests
+              memory: 128Mi # Минимальная память под гарантию
+            limits:         # Потолок контейнера
+              cpu: 500m     # Выше — контейнер ТОРМОЗИТ (throttle),
+                            # но не падает
+              memory: 512Mi # Выше — OOMKill (контейнер убьют)
+          securityContext:          # Привилегии ЭТОГО контейнера
+            allowPrivilegeEscalation: false  # Запрет «самоповышения»
+                            # привилегий (no_new_privs)
+            capabilities:
+              drop: ["ALL"] # Снять все Linux-возможности (CAP_*):
+                            # postgres'у они для нашей задачи не нужны
+  # --- ДИСК-НА-КАЖДЫЙ-POD ---
+  volumeClaimTemplates:  # StatefulSet порождает PVC по шаблону
+                         # для КАЖДОГО Pod'а (у нас: pg-data-postgres-0)
+    - metadata:
+        name: pg-data    # Имя тома — оно же в volumeMounts выше
+      spec:
+        accessModes: ["ReadWriteOnce"]  # Диск читает-пишет ОДИН узел
+        resources:
+          requests:
+            storage: 1Gi # Размер заказа; provisioner local-path
+                         # выделит каталог на ноде при постановке Pod'а.
+                         # Диск переживает удаление Pod'а — в этом
+                         # весь смысл StatefulSet для базы
