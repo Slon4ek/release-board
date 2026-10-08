@@ -74,6 +74,8 @@ Merge-коммитов нет.
 | `21d6f87` | отчёт: журнал работы с remote (пункты 1–6), срезы #8–#13, вводная этапа 1 | [#14](https://github.com/Slon4ek/release-board/pull/14) |
 | `6380e10` | cherry-pick коммита `49ab4f7`: уточнение описания `make test-db` в README (пункт 7) | [#15](https://github.com/Slon4ek/release-board/pull/15) |
 | `d0a5cbe` | runbook `docs/runbooks/git-recovery.md` (ТЗ, строка 178) и обновление отчёта | [#16](https://github.com/Slon4ek/release-board/pull/16) |
+| `7c1911d` | `Dockerfile`, `.dockerignore`, `Makefile` (docker-*), отчёт (этап 3), `docs/environment.md` | [#17](https://github.com/Slon4ek/release-board/pull/17) |
+| `6791ae7` | манифесты k8s для стенда k3d (namespace, configmap, secret.example, postgres, api, serviceaccount, pdb, networkpolicy), `deploy/k8s/README.md`, `scripts/k8s-load-test.sh`, runbook диагностики, отчёт (этап 4) | [#18](https://github.com/Slon4ek/release-board/pull/18) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.
@@ -449,7 +451,7 @@ kubeconform -strict -summary -kubernetes-version 1.35.5 <файл>
 - Изменения этапа: `deploy/k3d/cluster.yaml`, `deploy/k8s/base/`
   (namespace, configmap, secret.example, postgres, api, serviceaccount,
   pdb, networkpolicy), `scripts/k8s-load-test.sh`,
-  `docs/runbooks/kubernetes-diagnostics.md`, `docs/report.md` — единым PR.
+  `docs/runbooks/kubernetes-diagnostics.md`, `docs/report.md` — единым PR #18 (6791ae7).
 
 ---
 
