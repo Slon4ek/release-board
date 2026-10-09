@@ -4,9 +4,6 @@
 .env.*
 !.env.example
 !.env-test.example
-kubeconfig
-*.kubeconfig
-kubeconfig-*
 secrets
 *.key
 *.pem
@@ -52,3 +49,10 @@ deploy/rendered/
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- Kubeconfig ---
+kubeconfig
+*.kubeconfig
+kubeconfig-*
+kubeconfig*.yaml
+k3s-release-board.yaml
