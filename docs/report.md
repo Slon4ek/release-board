@@ -455,6 +455,238 @@ kubeconform -strict -summary -kubernetes-version 1.35.5 <файл>
 
 ---
 
-## Этапы 5–8
+# Черновик раздела отчёта: «## Этап 5. Отдельный k3s-кластер»
+
+Назначение: вставить в `docs/report.md` **перед** заголовком `## Этапы 5–8`
+(заголовок «Этапы 5–8» оставить на месте — под ним позже допишутся
+разделы 6–8). Дата проверок агентом: 2026-10-09.
+
+---
+
+## Этап 5. Отдельный k3s-кластер
+
+Дата работ: 2026-10-08 – 2026-10-09. Контекст кластера: `k3s-release-board`
+(проверка контекста перед любой командой очистки — ТЗ, строка 245).
+Команды и подтверждающие строки зафиксированы по факту выполнения; полные
+логи не копируются. Коды завершения указаны для проверок, перепроверенных
+2026-10-09.
+
+### Профиль VM (ТЗ, строка 234)
+
+| Параметр | Значение |
+| --- | --- |
+| Гипервизор | KVM: `qemu-system-x86_64` 10.2.1, запуск `-enable-kvm -cpu host -smp 2 -m 4096` (скрипт `start-vm.sh`, консоль `-nographic` в tmux) |
+| ОС | Ubuntu 24.04.5 LTS, kernel `6.8.0-146-generic` (в журнале при закрытии 5.1 — `6.8.0-142`; пакет `-146` установлен apt 2026-10-08 18:36 по `dpkg.log`, активен после ребута) |
+| CPU | 2 vCPU (`-smp 2`, Intel Core i5-12450H) |
+| RAM | 4096 MiB (`-m 4096` = ровно 4 ГБ; в госте видно ~3.8 GiB из-за firmware-резервов), swap 0 B |
+| Диск | qcow2: виртуальный 50 GiB, на диске 3.25 GiB (2026-10-09), backing-файл — cloud-образ `noble-server-cloudimg-amd64.img`; в госте `/dev/vda` 50 ГБ, раздел `/` = 48 ГБ (занято ~4.5 ГБ) |
+| Сеть | qemu user-mode (slirp) NAT: `ens3` 10.0.2.15/24, шлюз 10.0.2.2 (DHCP), пробросы 2222→22 и 6443→6443 |
+| Доступ | SSH `ubuntu@localhost -p 2222`, парольный `sudo` не требуется; развёрнута cloud-инициализацией (`seed.iso`) |
+
+Требование ТЗ «2 vCPU, 4 ГБ RAM, диск от 20 ГБ» выполнено: `-m 4096` даёт
+ровно 4 ГБ, диск — с запасом. Swap отсутствует (0 B): на стенд api+postgres
+хватает (после подъёма k3s доступно ~2.7 GiB), при OOM — добавить.
+SSH-консоль qemu держалась в tmux.
+
+### Установка: сверка install.sh (ТЗ, строка 233)
+
+Установщик брался не «с полки», а с точного upstream-коммита и сверялся в
+двух независимых копиях до запуска:
+
+| Команда | Код | Подтверждающий фрагмент |
+| --- | --- | --- |
+| `git ls-remote --tags https://github.com/k3s-io/k3s 'refs/tags/v1.35.5+k3s1*'` | 0 | lightweight-тег (без `^{}`), коммит `6a4781ad53ee5cad273bedcd9462ae36ac97d798` |
+| `git show 6a4781a:install.sh` (клон `--depth 1`) vs `curl raw.githubusercontent.com/.../6a4781a/install.sh` → `diff` | 0 | `DIFF OK`, 1160 строк |
+| `sha256sum install.sh` (обе копии) | 0 | `8598e002e61d658fed7b7542fc6d2c66d8da6eae69e088830105d2ee1ffb6d91` |
+| повторная сверка 2026-10-09: `curl -sL raw.../6a4781ad.../install.sh \| sha256sum` | 0 | тот же хеш `8598e002…` |
+| `sudo INSTALL_K3S_VERSION=v1.35.5+k3s1 sh /tmp/install-raw.sh` | 0* | `Using v1.35.5+k3s1 as release`, `Verifying binary download`, юнит `enabled` + `started` |
+
+\* Коды строк «diff» и установки — из журнала 2026-10-08: они не
+перепроверялись повторно (временные файлы удалены), результат
+подтверждён выходными данными (`DIFF OK`; юнит `enabled`+`started`) и
+повторной сверкой SHA-256 2026-10-09.
+
+Код установщика просмотрен до запуска (1160 строк): скачивает только с
+`github.com/k3s-io/k3s/releases` (плюс S3 для dev-сборок), сверяет SHA-256
+бинаря с release-asset, ставит `/usr/local/bin/k3s` и симлинки
+`kubectl`/`crictl`/`ctr`, создаёт systemd-юнит `Type=notify,
+Restart=always`, env-файл с правами 0600, чистит старые iptables-правила
+`KUBE-`/`CNI-`/flannel и имеет штатный `uninstall`. Версия закреплена
+параметром установщика `INSTALL_K3S_VERSION` (ТЗ, строка 233).
+
+### Роли k3s server и agent (ТЗ, строка 235)
+
+`k3s` — один бинарник с двумя режимами: `k3s server` и `k3s agent`.
+
+**Server** в нашей single-server установке совмещает три роли на одном узле:
+
+- **control-plane**: `kube-apiserver` (точка входа кластера),
+  `kube-scheduler` (распределение Pod'ов по нодам), `kube-controller-manager`
+  (следит, чтобы реальность совпала с описанным состоянием),
+  `cloud-controller-manager` — имена видны по клиентским сертификатам в
+  `/var/lib/rancher/k3s/server/tls/` (`client-kube-apiserver`,
+  `client-scheduler`, `client-kube-controller-manager`,
+  `client-k3s-cloud-controller`);
+- **datastore**: вместо etcd — SQLite через kine: сокет
+  `server/kine.sock`, данные в `server/db/state.db` (+ `-shm`, `-wal`).
+  Хранилище кластера лежит на диске того же узла — свойство
+  single-server, а не отдельный кластер БД;
+- **worker**: `kubelet` (запускает Pod'ы), `kube-proxy` (программирует
+  сетевые правила), `containerd` (контейнерный рантайм), flannel/CNI,
+  а также управляющие Pod'ы из статичных манифестов: CoreDNS,
+  Traefik, local-path-provisioner, metrics-server.
+
+**Agent** — только worker-часть: kubelet + kube-proxy + containerd,
+подключается к API server. В нашей установке agent-узлов нет — всё
+перечисленное живёт на единственной ноде `k3s-vm`.
+
+Практическое подтверждение: taint на server-ноде не ставится, и системные
+Pod'ы, и наши `release-board-api`/`postgres` бегают на том же узле:
+
+```text
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.node-role\.kubernetes\.io/control-plane}{"\t"}{range .spec.taints[*]}{.key}={.value}{end}{"\n"}{end}'
+k3s-vm  true      ← роль control-plane есть, тaint-строки нет (exit 0)
+```
+
+### Проверки установки (ТЗ, строка 236)
+
+| Проверка | Команда | Код | Результат |
+| --- | --- | --- | --- |
+| Служба | `systemctl is-enabled k3s` / `systemctl is-active k3s` | 0 / 0 | `enabled` / `active` — автозапуск при загрузке ОС |
+| Узел | `kubectl --context k3s-release-board get nodes` | 0 | `k3s-vm  Ready  control-plane  v1.35.5+k3s1  10.0.2.15  containerd://2.2.3-k3s1` (версии k3s и узла перекрёстно совпадают) |
+| Контейнеры CRI | `ssh … 'sudo crictl ps -q \| wc -l'` | 0 | `6` до стенда (coredns, traefik, svclb ×2, metrics-server, local-path), `9` после — + postgres + 2×api |
+| Версия | `ssh … 'sudo k3s --version'` | 0 | `k3s version v1.35.5+k3s1 (6a4781ad)` / `go version go1.25.9` — SHA бинаря совпадает с upstream-коммитом установки |
+| API на хосте | `curl -sk https://127.0.0.1:6443/` | 0 | `401` — проброс 6443 работает, без клиента сертификата API отвечает отказом |
+
+`k3s version` (без `--`) отвечает `No help topic for 'version'` (rc=3) —
+рабочая форма на этой версии `k3s --version`.
+
+### kubeconfig: защищённый локальный путь (ТЗ, строки 238–240)
+
+- kubeconfig на VM уже содержал `server: https://127.0.0.1:6443` — подмена
+  адреса API не понадобилась; проброс 6443 на хост подтверждён ответом 401.
+- Перенос: копия в `/tmp` на VM → `scp -P 2222` на ноутбук →
+  `~/.kube/k3s-release-board.yaml`, `chmod 600` →
+  `kubectl config rename-context default k3s-release-board` (имя контекста
+  по ТЗ, строка 245) → временная копия на VM удалена.
+- В основной конфиг добавлен без подмены: `kubectl config get-contexts`
+  показывает оба контекста (`k3d-release-board`, `k3s-release-board`), `get
+  nodes` отвечает на обоих.
+
+Проверки для ТЗ, строки 239–240:
+
+| Команда | Код | Результат |
+| --- | --- | --- |
+| `git check-ignore -v k3s-release-board.yaml` | 0 | `.gitignore:58:k3s-release-board.yaml` — файл под правилом |
+| `git ls-files \| grep -i kubeconfig` | 1 | пусто: в Git нет ни kubeconfig, ни файлов с этим именем (grep exit 1 = «не найдено», здесь это успех) |
+| `git check-ignore -v kubeconfig.yaml` | 0 | `.gitignore:57:kubeconfig*.yaml` — файл под правилом |
+
+В `.gitignore` блок kubeconfig-файлов дополнен (`568daf0`, ветка
+`feature/stage5-report`): 8 добавленных и 4 удалённых строк — блок собран
+в конец файла (строки 53–58), добавлены `kubeconfig*.yaml` и
+`k3s-release-board.yaml`.
+
+### Перечень упакованных компонентов (ТЗ, строка 241)
+
+Состав зафиксирован по факту установки `v1.35.5+k3s1` (ТЗ требует
+оговорку: между релизами состав меняется):
+
+- **статичные манифесты** `/var/lib/rancher/k3s/server/manifests/`:
+  `ccm.yaml`, `coredns.yaml`, `local-storage.yaml`, `metrics-server/`,
+  `rolebindings.yaml`, `runtimes.yaml`, `traefik.yaml`;
+- **чарты** `/var/lib/rancher/k3s/server/static/charts/`:
+  `traefik-39.0.701+up39.0.7.tgz`, `traefik-crd-39.0.701+up39.0.7.tgz`
+  (klipper-helm ставит Traefik при старте);
+- **datastore**: `server/db/state.db` + `-shm` + `-wal`, сокет
+  `server/kine.sock` (SQLite через kine);
+- **бинари** `data/<sha>/bin/`: k3s (+ `k3s-agent`, `k3s-server`,
+  `k3s-certificate`, `k3s-etcd-snapshot`, `k3s-secrets-encrypt`,
+  `k3s-token`, `k3s-completion`), kubectl, containerd,
+  containerd-shim-runc-v2, runc, ctr, crictl, cni, flannel, host-local,
+  conntrack, slirp4netns, fuse-overlayfs, busybox (+ applets);
+- **сетевой тулсет** `bin/aux/`: iptables/ip6tables/arptables/ebtables в
+  вариантах legacy и nft, nft, xtables-multi — упакован k3s, не зависит от
+  iptables хоста;
+- **образы** (`crictl images --digests`, 2026-10-09): mirrored-coredns
+  1.14.3, mirrored-metrics-server v0.8.1, mirrored-library-traefik 3.6.13,
+  local-path-provisioner v0.0.36, klipper-lb v0.4.17, klipper-helm
+  v0.10.0-build20260513, mirrored-pause 3.6, mirrored-library-busybox
+  1.37.0 — плюс наши postgres 16.15, busybox 1.37.0 и release-board 1.0.0.
+
+### Передача образа в k3s (ТЗ, строка 242)
+
+Registry k3d (`k3d-release-board-registry.localhost:5000`) находится в
+Docker-сети k3d и из VM недоступен — поэтому выбран второй путь ТЗ:
+документированный импорт в containerd:
+
+```text
+docker save release-board:1.0.0 -o /tmp/release-board.tar   → 77M (одна картинка, два имени)
+scp -P 2222 /tmp/release-board.tar ubuntu@localhost:/tmp/
+ssh … 'sudo k3s ctr images import /tmp/release-board.tar'    → namespace k8s.io (= k3s)
+k3s ctr images tag docker.io/library/release-board:1.0.0 \
+  k3d-release-board-registry.localhost:5000/release-board@sha256:727536d5…
+```
+
+Алиас создан на digest-destination: `k3s ctr -n k8s.io images ls | grep
+release-board` показывает **две ссылки на один digest**
+`sha256:727536d53a127…aae8159b5` (тот же, что push в registry на этапе 3).
+Pod'ы работают по ссылке из манифестов
+`…registry.localhost:5000/release-board@sha256:727536d5…`, и
+`status.containerStatuses.imageID` возвращает тот же digest — манифесты
+этапа 4 применимы на k3s без правок. Временные tar удалены после импорта.
+
+### Перезапуск VM и сохранность данных (ТЗ, строка 243)
+
+Порядок: стенд `release-board-raw` развёрнут на контексте
+`k3s-release-board` (те же манифесты `deploy/k8s/base/`, порядок из
+`deploy/k8s/README.md`) → маркер в базе → `sudo reboot` → ожидание →
+проверки:
+
+```bash
+# до ребута: маркер в той же таблице, что и в проверке этапа 4 (п.5)
+kubectl --context k3s-release-board exec -n release-board-raw postgres-0 -- \
+  psql -U release_board -d release_board -c "CREATE TABLE IF NOT EXISTS durability_check(note text, at timestamp default now()); INSERT INTO durability_check(note) VALUES ('before-reboot-k3s');"
+#   CREATE TABLE / INSERT 0 1
+
+# после ребута
+kubectl --context k3s-release-board wait --for=create node/k3s-vm --timeout=180s        # node/k3s-vm condition met
+kubectl --context k3s-release-board wait --for=condition=Ready node/k3s-vm --timeout=300s  # node/k3s-vm condition met
+kubectl --context k3s-release-board get pods -n release-board-raw -o wide
+#   postgres-0, release-board-api ×2 — 1/1 Running, RESTARTS 1 (70s ago)  ← Pod'ы не пересоздавались
+kubectl --context k3s-release-board wait --for=condition=Ready pod/postgres-0 -n release-board-raw --timeout=180s
+#   pod/postgres-0 condition met
+kubectl --context k3s-release-board exec … psql -c "SELECT note, at FROM durability_check;"
+#   before-reboot-k3s | 2026-10-09 08:34:16.587177   ← строка пережила reboot
+kubectl --context k3s-release-board port-forward -n release-board-raw svc/release-board-api 8081:8000 &
+sleep 3; curl -sS localhost:8081/ready; kill %1
+#   {"status":"ready"}   ← 200, SELECT 1 до базы проходит
+```
+
+Дополнительно после перезагрузки сессии проверено повторно
+(2026-10-09, только чтение): `ssh … 'uptime; systemctl is-active k3s'` →
+`up 21 min` + `active` — k3s поднялся сам, юнит `enabled` при установке;
+маркер и `/ready` — как выше (exit 0 на обеих проверках).
+
+Что это доказывает и чего не доказывает: перезапуск узла не привёл к потере
+данных на PVC и кластер вернулся в ожидаемое состояние без ручных
+действий. Это **не** защита от потери диска или всей VM: для таких
+сценариев backup/restore выполняется на этапе 8 (ТЗ, строка 243).
+
+### Итоги этапа 5
+
+- Пункты 1–7 ТЗ (строки 234–242) и проверка п.243 выполнены: профиль VM,
+  сверенный установщик, роли server/agent, systemctl/kubectl/crictl,
+  kubeconfig `0600` вне Git, перечень компонентов, импорт образа в
+  containerd, перезапуск VM с сохранением данных.
+- Изменения в репозитории на этот этап: `.gitignore` (kubeconfig-блок) —
+  коммит `568daf0` в ветке `feature/stage5-report`; сам отчёт и
+  `docs/environment.md` — этим же PR.
+- Данные PostgreSQL в k3s живут на PVC `local-path` (`pg-data-postgres-0`);
+  устойчивость к ребуту подтверждена, устойчивость к потере диска — нет
+  (этап 8).
+
+---
+
+## Этапы 6–8
 
 Записи добавляются по мере выполнения.
