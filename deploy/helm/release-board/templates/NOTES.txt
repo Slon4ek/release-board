@@ -1,0 +1,14 @@
+Release {{ .Release.Name }} (app {{ .Chart.AppVersion }}) установлен в {{ .Release.Namespace }}.
+
+Состояние стенда:
+  kubectl -n {{ .Release.Namespace }} get pods,svc,pvc \
+    -l app.kubernetes.io/instance={{ .Release.Name }}
+
+API через port-forward:
+  kubectl -n {{ .Release.Namespace }} port-forward \
+    svc/{{ include "release-board.fullname" . }}-api 8080:80
+  curl http://localhost:8080/live
+  curl http://localhost:8080/releases
+
+Проверочный Pod chart'а:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

@@ -1,0 +1,44 @@
+# helm test: 1) /live не зависит от БД; 2) GET /releases читает из БД
+# (схему к этому моменту уже накатил хук-мигратор).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "release-board.fullname" . }}-test-live
+  labels:
+    {{- include "release-board.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: curl
+      image: "{{ .Values.test.image.repository }}:{{ .Values.test.image.tag }}"
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "1/2: GET /live (с ретраем: первый SYN свежего пода может упасть по netpol-гонке)"
+          code=$(curl -sS --max-time 5 --retry 8 --retry-connrefused --retry-delay 1 \
+            -o /dev/null -w '%{http_code}' \
+            http://{{ include "release-board.fullname" . }}-api/live)
+          echo "   -> $code"
+          [ "$code" = "200" ]
+          echo "2/2: GET /releases (чтение из БД)"
+          curl -sS --max-time 5 -f \
+            http://{{ include "release-board.fullname" . }}-api/releases
+          echo
+          echo "helm test: OK"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]

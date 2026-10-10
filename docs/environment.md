@@ -29,7 +29,7 @@
 | kubeconform | 0.8.0 |
 | k3s (на VM, этап 5) | v1.35.5+k3s1 (`k3s --version`: `6a4781ad`, go1.25.9) |
 | QEMU/KVM (гипервизор VM) | qemu-system-x86_64 10.2.1 (`Debian 1:10.2.1+ds-1ubuntu3.2`) |
-| Helm | не установлен — потребуется на этапе 6 (ТЗ: 3.19+ или 4.x) |
+| Helm | 3.20.2 (`helm version`: commit `8fb76d6`, go1.25.9) — установлен для этапа 6; флаги Helm 3: `--install --atomic --wait --timeout 3m` |
 | Trivy | 0.75.0 (запуск в контейнере `aquasec/trivy:0.75.0`) |
 | Pyright | 1.1.414 |
 | Ruff | 0.16.10 |
