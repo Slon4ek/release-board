@@ -25,6 +25,19 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
 {{/*
+Ссылка на образ: repository@digest (приоритет) или repository:tag.
+digest — единственный способ гарантировать нужные байты, когда тег
+перезаписан (кэш IfNotPresent берёт старое по тегу).
+*/}}
+{{- define "release-board.imageRef" -}}
+{{- if .Values.image.digest -}}
+{{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
+{{- else -}}
+{{- printf "%s:%s" .Values.image.repository .Values.image.tag -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Лейблы-селекторы: ДОЛЖНЫ совпадать между контроллером и его Service.
 Сюда входят только name + instance — менять их нельзя, это «адрес» Pod'а.
 Компонент (api/postgres) добавляется точечно в шаблонах.

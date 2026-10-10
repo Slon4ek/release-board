@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: alembic
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ include "release-board.imageRef" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             - sh
