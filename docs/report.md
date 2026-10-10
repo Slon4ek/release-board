@@ -78,6 +78,7 @@ Merge-коммитов нет.
 | `6791ae7` | манифесты k8s для стенда k3d (namespace, configmap, secret.example, postgres, api, serviceaccount, pdb, networkpolicy), `deploy/k8s/README.md`, `scripts/k8s-load-test.sh`, runbook диагностики, отчёт (этап 4) | [#18](https://github.com/Slon4ek/release-board/pull/18) |
 | `a1e4c35` | отчёт: срезы #17–#18 в таблице этапа 2, ссылка `PR #18 (6791ae7)` в итогах этапа 4 | [#19](https://github.com/Slon4ek/release-board/pull/19) |
 | `10be8e4` | отчёт (этап 5: k3s-кластер), `docs/environment.md` (kubectl, kubeconform, k3s на VM, QEMU, раздел VM), `.gitignore`: блок kubeconfig | [#20](https://github.com/Slon4ek/release-board/pull/20) |
+| `aeded65` | Helm chart этапа 6 (стенды k3d/k3s), скрипты stand-*, make-таргеты, отчёт (этап 6), environment.md (Helm 3.20.2) | [#21](https://github.com/Slon4ek/release-board/pull/21) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.

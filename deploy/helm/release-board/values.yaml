@@ -4,7 +4,7 @@
 
 image:
   repository: k3d-release-board-registry.localhost:5000/release-board
-  tag: "1.0.0"                # = appVersion Chart.yaml = TAG в Makefile
+  tag: "1.1.0"                # = appVersion Chart.yaml = TAG в Makefile
   pullPolicy: IfNotPresent
 
 api:
