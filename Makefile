@@ -71,7 +71,7 @@ migrate-down:
 	$(PYTHON) -m alembic downgrade base
 
 IMAGE ?= release-board
-TAG ?= 1.0.0
+TAG ?= 1.1.0
 TRIVY_IMAGE ?= aquasec/trivy:0.75.0
 
 docker-build:
