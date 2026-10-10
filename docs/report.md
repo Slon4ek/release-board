@@ -79,6 +79,8 @@ Merge-коммитов нет.
 | `a1e4c35` | отчёт: срезы #17–#18 в таблице этапа 2, ссылка `PR #18 (6791ae7)` в итогах этапа 4 | [#19](https://github.com/Slon4ek/release-board/pull/19) |
 | `10be8e4` | отчёт (этап 5: k3s-кластер), `docs/environment.md` (kubectl, kubeconform, k3s на VM, QEMU, раздел VM), `.gitignore`: блок kubeconfig | [#20](https://github.com/Slon4ek/release-board/pull/20) |
 | `aeded65` | Helm chart этапа 6 (стенды k3d/k3s), скрипты stand-*, make-таргеты, отчёт (этап 6), environment.md (Helm 3.20.2) | [#21](https://github.com/Slon4ek/release-board/pull/21) |
+| `648eddb` | Релиз 1.1.0: CHANGELOG, версии chart/app/Makefile; CI: 6 стадий, артефакты для SemVer-тега | [#22](https://github.com/Slon4ek/release-board/pull/22) |
+| `f44535d` | Chart: поддержка image.digest (деплой по неизменяемому digest) | [#23](https://github.com/Slon4ek/release-board/pull/23) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.
@@ -820,6 +822,108 @@ PVC Bound, GET /releases возвращает тот же UUID  ← данные
 
 ---
 
-## Этапы 7–8
+## Этап 7. CI и выпуск версии
+
+Дата работ: 2026-10-10.
+
+### Пайплайн: шесть стадий (ТЗ, строки 309–323)
+
+`.github/workflows/ci.yml` переписан под шесть стадий ТЗ. Триггеры:
+push во все ветки, PR в `main` **и** `release/**`, SemVer-теги `v*`.
+
+| Job | Стадия ТЗ | Что делает | Gate merge |
+| --- | --- | --- | --- |
+| `check` | 1–2 | lint + typecheck + тесты (postgres service-контейнер) | **да** — Ruleset требует job `check` |
+| `docker` | 3–4 | `make docker-build` + Trivy 0.75.0 (HIGH/CRITICAL → exit 1) | нет — остаток 55 разобран в отчёте этапа 3, иначе все PR были бы красными |
+| `helm` | 5 | `helm lint` + `template \| kubeconform -strict` (0.8.0, k8s 1.35.5) | нет |
+| `release` | 6 | **только SemVer-тег**: `docker save` + `helm package` + проверка содержимого + `SHA256SUMS` + upload-artifact (90 дней) | нет; `needs: [check, helm]` — от `docker` не зависит |
+
+На первом PR этапа поведение подтвердилось: `check`/`helm` —
+Successful, `docker` — Failing (Trivy, по задумке), `release` —
+Skipped (условие «только тег»).
+
+Соответствие ТЗ:
+
+- **секретов нет ни в одном шаге** — передавать fork'ам нечего;
+  `permissions: contents: read` — CI-токен только читает;
+- версии actions закреплены (`checkout@v7`, `setup-python@v7`,
+  `upload-artifact@v7`), Trivy `0.75.0` и kubeconform `0.8.0` — числами;
+- кэш pip по `requirements-dev.lock`;
+- runner **не** подключается к k3d/k3s: Docker socket и K8s API наружу
+  не открываются, deploy-job'а в CI нет — локальное развёртывание
+  выполняется вручную из артефактов (ниже).
+
+### Релиз v1.1.0 (ТЗ, строки 325–334)
+
+| Пункт ТЗ | Выполнено |
+| --- | --- |
+| `CHANGELOG.md` | создан (Keep a Changelog): 1.1.0 (Added/Changed/Notes) + 1.0.0 |
+| сверка Git tag ↔ Chart.yaml ↔ appVersion ↔ тег контейнера | `Chart.yaml` version 1.1.0 + appVersion "1.1.0", values tag "1.1.0", Makefile `TAG ?= 1.1.0` — один коммит `9b68242` |
+| аннотированный тег, отдельный push | `git tag -a v1.1.0` → `git push origin v1.1.0` отдельной командой; `git cat-file -t v1.1.0` → `tag` (не lightweight) |
+| проверка в интерфейсе | `git ls-remote --tags origin v1.1.0` → `5984bc80…`; Release-страница: `releases/tag/v1.1.0` |
+| архив chart + проверка содержимого до публикации | в job `release`: `helm package` + `tar -tzf` (содержимое в логе job'а) + `sha256sum > SHA256SUMS` |
+| release notes: изменения / миграция / откат | три секции в Release v1.1.0 (`gh release create`) |
+
+Артефакты release-job'а (`release-1.1.0`, хранение 90 дней):
+OCI-образ `release-board-1.1.0.tar.gz` (76 MB), Helm chart
+`release-board-1.1.0.tgz` (5.8 KB), `SHA256SUMS`.
+
+### Локальное развёртывание из OCI-архива без пересборки (ТЗ, строки 319–323)
+
+```text
+gh run download --name release-1.1.0 → 3 файла
+sha256sum -c SHA256SUMS              → оба: OK
+docker load -i release-board-1.1.0.tar.gz  (без пересборки)
+docker tag + docker push в registry k3d
+  → digest: sha256:ab58e992bee6...   ← OCI-манифест в registry
+helm upgrade ... --set image.digest=sha256:ab58e992...
+  → REVISION: 11
+GET /version → {"version":"1.1.0","git_sha":"648eddb"}  ← коммит тега
+imageID обоих Pod'ов: ...@sha256:ab58e992...            ← байты CI-артефакта
+```
+
+Цепочка доказана двумя независимыми сверками: контрольная сумма
+**файла** (`b1b3b25c…` — скачано без искажений) и digest
+**манифеста** (`ab58e992…` — в registry ровно те байты); сравнение —
+по ссылкам на один platform manifest (`docker manifest inspect`),
+как требует ТЗ.
+
+### Грабль: тег перезаписан, кэш IfNotPresent взял старое
+
+Первый upgrade на тег 1.1.0 поднял **старый** образ: `/version`
+ответил `git_sha: 10be8e4` (коммит этапа 5) вместо `648eddb` (коммит
+тега). Причина: в registry k3d уже лежал `1.1.0` от этапа 6
+(digest `e3db450c…`), ноды закэшировали его по тегу, `IfNotPresent`
+свежий pull не сделал. Подтверждение: `imageID` Pod'ов =
+`sha256:e3db450c…`.
+
+Фикс — требование ТЗ «укажи digest в workload»: в chart добавлен
+`image.digest` (default пустой = поведение прежнее), хелпер
+`release-board.imageRef` рендерит `repository@digest` приоритетно над
+`repository:tag`, schema принимает только `^$|^sha256:[a-f0-9]{64}$`.
+PR #23 (`f44535d`). Повторный upgrade с digest: `/version` →
+`git_sha: 648eddb`, `imageID` = `ab58e992…`.
+
+Вывод: тег — имя, digest — байты. При перезаписи тега в registry
+кэш `IfNotPresent` молча отдаст старое; для воспроизводимого деплоя
+workload должен ссылаться на digest.
+
+### Итоги этапа 7
+
+- Пайплайн из 6 стадий работает на push/PR/SemVer-тег; gate merge —
+  только `check` (имя сохранено под Ruleset), Trivy-остаток виден, но
+  не блокирует.
+- Релиз `v1.1.0`: аннотированный тег `5984bc80…` → коммит `648eddb`,
+  Release с notes (изменения/миграция/откат), артефакты в Actions.
+- Артефакты развёрнуты на k3d **без пересборки**, деплой по digest
+  `ab58e992…`, `/version` сверяет с коммитом тега.
+- Изменения этапа: `.github/workflows/ci.yml`, `CHANGELOG.md`,
+  версии в `Chart.yaml`/`values.yaml`/`Makefile`, поддержка
+  `image.digest` в chart — PR #22 и #23.
+
+---
+
+
+## Этап 8
 
 Записи добавляются по мере выполнения.
