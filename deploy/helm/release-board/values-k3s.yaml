@@ -1,0 +1,4 @@
+# Отличия стенда k3s (VM): образ импортирован в containerd
+image:
+  repository: release-board       # после импорта это docker.io/library/release-board:1.0.0
+  pullPolicy: Never               # тянуть некуда и не нужно — пулл сломал бы ожидание

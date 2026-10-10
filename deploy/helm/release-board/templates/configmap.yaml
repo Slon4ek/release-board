@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "release-board.fullname" . }}-config
+  labels:
+    {{- include "release-board.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+data:
+  MODE: {{ .Values.config.MODE | quote }}
+  DB_HOST: {{ printf "%s-postgres" (include "release-board.fullname" .) | quote }}
+  DB_PORT: "5432"

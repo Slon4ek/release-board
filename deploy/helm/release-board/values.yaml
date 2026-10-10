@@ -1,0 +1,47 @@
+# Значения по умолчанию. Переопределяются файлами сред:
+#   -f values-k3d.yaml  /  -f values-k3s.yaml
+# Секреты сюда НЕ пишем: только имя заранее созданного Secret.
+
+image:
+  repository: k3d-release-board-registry.localhost:5000/release-board
+  tag: "1.0.0"                # = appVersion Chart.yaml = TAG в Makefile
+  pullPolicy: IfNotPresent
+
+api:
+  replicas: 2
+  port: 80                    # порт Service; контейнер всегда слушает 8000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+postgres:
+  image:
+    repository: postgres
+    tag: "16.15"              # точный патч; плавающее "16" запрещено
+    pullPolicy: IfNotPresent
+  initImage: busybox:1.37.0   # init-контейнер chown: local-path игнорирует fsGroup
+  persistence:
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+config:
+  MODE: "DEV"                 # TEST / LOCAL / PROD — как в raw-стенде
+
+# Заранее созданный Secret (kubectl create secret generic ...) — chart только ссылается
+dbSecret:
+  name: release-board-db      # ключи: DB_USER, DB_PASSWORD, DB_NAME
+
+test:
+  image:
+    repository: curlimages/curl
+    tag: "8.9.1"              # тот же, что в scripts/k8s-load-test.sh

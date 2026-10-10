@@ -1,0 +1,4 @@
+# Отличия стенда k3d: образ берётся из registry кластера k3d
+image:
+  repository: k3d-release-board-registry.localhost:5000/release-board
+  pullPolicy: IfNotPresent

@@ -1,6 +1,6 @@
 PYTHON := $(shell if [ -x "$(CURDIR)/.venv/bin/python" ]; then echo "$(CURDIR)/.venv/bin/python"; else command -v python3 || echo python3; fi)
 
-.PHONY: help install install-dev lint format typecheck test test-unit test-integration check all migrate-up migrate-down test-db docker-build docker-run docker-version docker-stop docker-scan
+.PHONY: help install install-dev lint format typecheck test test-unit test-integration check all migrate-up migrate-down test-db docker-build docker-run docker-version docker-stop docker-scan stand-up-k3d stand-up-k3s stand-smoke-k3d stand-smoke-k3s stand-test-k3d stand-test-k3s stand-status-k3d stand-status-k3s
 
 help:
 	@echo "Команды:"
@@ -22,6 +22,14 @@ help:
 	@echo "  make docker-version    — GET /version из запущенного контейнера"
 	@echo "  make docker-stop       — остановить контейнер (SIGTERM)"
 	@echo "  make docker-scan       — Trivy: HIGH/CRITICAL по образу (закреплённая версия)"
+	@echo "  make stand-up-k3s     — поднять/обновить helm-стенд k3s"
+	@echo "  make stand-up-k3d     — поднять/обновить helm-стенд k3d"
+	@echo "  make stand-smoke-k3s  — smoke k3s (pods + /live /releases /version)"
+	@echo "  make stand-smoke-k3d  — smoke k3d (pods + /live /releases /version)"
+	@echo "  make stand-test-k3s   — helm test k3s"
+	@echo "  make stand-test-k3d   — helm test k3d"
+	@echo "  make stand-status-k3s — быстрый срез k3s"
+	@echo "  make stand-status-k3d — быстрый срез k3d"
 
 install:
 	$(PYTHON) -m pip install -r requirements.lock
@@ -80,3 +88,13 @@ docker-stop:
 
 docker-scan:
 	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(CURDIR)/.trivy:/root/.cache $(TRIVY_IMAGE) image --exit-code 1 --severity HIGH,CRITICAL $(IMAGE):$(TAG)
+
+# ── стенды (scripts/stand-*.sh) ──
+stand-up-k3d:     ; scripts/stand-up.sh k3d
+stand-up-k3s:     ; scripts/stand-up.sh k3s
+stand-smoke-k3d:  ; scripts/stand-smoke.sh k3d
+stand-smoke-k3s:  ; scripts/stand-smoke.sh k3s
+stand-test-k3d:   ; scripts/stand-test.sh k3d
+stand-test-k3s:   ; scripts/stand-test.sh k3s
+stand-status-k3d: ; scripts/stand-status.sh k3d
+stand-status-k3s: ; scripts/stand-status.sh k3s

@@ -76,6 +76,8 @@ Merge-коммитов нет.
 | `d0a5cbe` | runbook `docs/runbooks/git-recovery.md` (ТЗ, строка 178) и обновление отчёта | [#16](https://github.com/Slon4ek/release-board/pull/16) |
 | `7c1911d` | `Dockerfile`, `.dockerignore`, `Makefile` (docker-*), отчёт (этап 3), `docs/environment.md` | [#17](https://github.com/Slon4ek/release-board/pull/17) |
 | `6791ae7` | манифесты k8s для стенда k3d (namespace, configmap, secret.example, postgres, api, serviceaccount, pdb, networkpolicy), `deploy/k8s/README.md`, `scripts/k8s-load-test.sh`, runbook диагностики, отчёт (этап 4) | [#18](https://github.com/Slon4ek/release-board/pull/18) |
+| `a1e4c35` | отчёт: срезы #17–#18 в таблице этапа 2, ссылка `PR #18 (6791ae7)` в итогах этапа 4 | [#19](https://github.com/Slon4ek/release-board/pull/19) |
+| `10be8e4` | отчёт (этап 5: k3s-кластер), `docs/environment.md` (kubectl, kubeconform, k3s на VM, QEMU, раздел VM), `.gitignore`: блок kubeconfig | [#20](https://github.com/Slon4ek/release-board/pull/20) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.
@@ -687,6 +689,136 @@ sleep 3; curl -sS localhost:8081/ready; kill %1
 
 ---
 
-## Этапы 6–8
+## Этап 6. Helm chart и жизненный цикл релиза
+
+Дата работ: 2026-10-09 – 2026-10-10.
+
+### Развилки и версия Helm (ТЗ, строки 247–307)
+
+| Развилка | Решение | Почему |
+| --- | --- | --- |
+| Версия Helm | **3.20.2** (коммит `8fb76d6`, go1.25.9) | Требуется 3.19+; `3.20.3` на get.helm.sh ещё нет. Флаги Helm 3: `--install --atomic --wait --timeout 3m`; версия зафиксирована в `docs/environment.md` |
+| PostgreSQL | **Свой StatefulSet** в chart | ТЗ допускает; переиспользованы проверенные манифесты этапа 4, без внешних репозиториев и сети |
+| Миграции | **Hook Job** `post-install,pre-upgrade` + retry-цикл | Чистый `pre-install` сработал бы ДО появления postgres; при `helm rollback` хук не выполняется — совпадает с требованием «rollback не откатывает данные» |
+
+### Состав chart (`deploy/helm/release-board`, 17 файлов)
+
+| Файл | Назначение |
+| --- | --- |
+| `Chart.yaml` | `version: 0.1.0` (версия chart'а) против `appVersion: "1.0.0"` (версия приложения) — не путать |
+| `values.yaml` | значения по умолчанию; без `latest`, привилегий и выключенных limits |
+| `values-k3d.yaml` / `values-k3s.yaml` | только различия сред: registry k3d vs `repository: release-board` + `pullPolicy: Never` (импорт в containerd) |
+| `values.schema.json` | ловит `latest`, плавающий minor postgres, выкинутые поля — ошибку отдаёт helm-команда, а не кластер |
+| `templates/_helpers.tpl` | имена, общие лейблы, selector-лейблы (name + instance — «адрес» Pod'а) |
+| `serviceaccount.yaml`, `configmap.yaml` | SA без токена; MODE/DB_HOST/DB_PORT |
+| `deployment.yaml`, `service.yaml` | API: env из ConfigMap/Secret, пробы, preStop, readOnlyRootFilesystem + emptyDir `/tmp` |
+| `pdb.yaml` | `minAvailable: 1` |
+| `networkpolicy.yaml` | default-deny + allow-api-from-namespace + allow-postgres-from-api (api и migrate) |
+| `postgres-statefulset.yaml`, `postgres-service.yaml` | STS + PVC из `volumeClaimTemplates`, init-контейнер chown (local-path игнорирует `fsGroup`) |
+| `migrate-job.yaml` | хук alembic с retry ожидания БД до 3 минут |
+| `tests/test-live.yaml` | helm test: `/live` + чтение `/releases` из БД |
+| `NOTES.txt` | подсказки после установки |
+
+Секреты: chart только ссылается на заранее созданный Secret
+(`dbSecret.name`) — ни в values, ни в `--set`, ни в shell-историю, ни в
+отчёт пароль не попадает.
+
+### Проверки перед установкой (ТЗ, строка 299)
+
+| Команда | Код | Подтверждающий фрагмент |
+| --- | --- | --- |
+| `helm lint deploy/helm/release-board` | 0 | `1 chart(s) linted, 0 chart(s) failed` |
+| `helm template … \| kubeconform -strict -summary -kubernetes-version 1.35.5` | 0 | `Summary: 12 resources found - Valid: 12, Invalid: 0` |
+| то же `--show-only templates/migrate-job.yaml` | 0 | `1 resource found - Valid: 1` |
+| `helm template … --set image.tag=latest` | ≠0 | отклонён schema: `Does not match pattern` — негативный тест «охранника» |
+
+Версия кластера для kubeconform — 1.35.5 (совпадает с k3s на VM).
+
+### Установка на k3d и helm test (2026-10-09)
+
+```text
+ns release-board-helm (отдельный от release-board-raw)
+Secret release-board-db создан руками — chart только ссылается
+helm install release-board deploy/helm/release-board -n release-board-helm \
+  -f values-k3d.yaml --atomic --wait --timeout 3m
+→ STATUS: deployed, REVISION: 1; хук migrate — job Completed (retry дождался postgres)
+GET /live → {"status":"alive"};  GET /releases → [];  PVC Bound
+helm test → Phase: Succeeded (rev 3)
+```
+
+### Сценарий релиза (ТЗ, строки 286–297)
+
+| Пункт | Действие | Результат |
+| --- | --- | --- |
+| 1 | install `1.0.0` | rev 1 deployed (плюс rev 2–3 — upgrade на сохранённый chart, см. грабли) |
+| 2 | `POST /releases` | запись UUID `de46081a-7412-47e1-93e4-6f980f4a4e3e` |
+| 3–4 | `make docker-build TAG=1.1.0`, push (digest `sha256:e3db450c…`), `helm upgrade --set image.tag=1.1.0` | rev 4; `GET /version` → `{"version":"1.1.0","git_sha":"10be8e4"}`; запись пережила upgrade |
+| 5–6 | `--set image.tag=1.2.0-bad --atomic --wait --timeout 2m` | битый тег пойман **раньше раскатки** — на pre-upgrade хуке миграций (ImagePullBackOff → hook timed out): rev 5 failed, автооткат rev 6 «Rollback to 4». Остаточный hook-job удалён вручную (`hook-succeeded` чистит только успешные) |
+| 7 | тот же bad-тег + `--no-hooks`, затем `helm rollback release-board 4 --wait` | rev 7 failed `context deadline exceeded`, Pod'ы ImagePullBackOff **рядом с живыми старыми** (rolling update держит старую RS); явный rollback → rev 8 deployed |
+| 8 | history, pods, API | 8 ревизий; API Running 1.1.0; UUID записи на месте |
+
+**Развести в отчёте (ТЗ, строка 303):** `helm rollback` возвращает
+ресурсы, но **не** восстанавливает содержимое PostgreSQL и **не**
+отменяет миграции данных. В прогоне это подтверждено: все миграции до
+rollback были идемпотентными для данных, изменений схемы между rev 4 и
+rollback не было. При несовместимой миграции — остановить авто-rollback
+и применить план совместимости схемы.
+
+### Установка на k3s и перезапуск VM (2026-10-10)
+
+```text
+scripts/stand-up.sh k3s → ns release-board-k3s, Secret, STATUS: deployed, REVISION: 1
+  (образ берётся из containerd VM — values-k3s.yaml, pullPolicy Never)
+GET /live → alive; /version → {"version":"1.0.0","git_sha":"d0a5cbe"}
+helm test → Phase: Succeeded
+POST /releases → UUID 63d5cdda-181f-4823-847b-3ca907460f82
+sudo reboot → systemctl is-enabled k3s = enabled, is-active = active, up 18 min
+после ребута: api ×2 и postgres-0 Running (RESTARTS 2 — рестарт после ребута, не падение),
+PVC Bound, GET /releases возвращает тот же UUID  ← данные пережили ребут
+```
+
+### Скрипты стенда (`scripts/stand-*.sh`)
+
+Повторяющиеся команды вынесены в скрипты; шпаргалка — `scripts/README.md`,
+таргеты Makefile: `make stand-{up,smoke,test,status}-{k3d,k3s}`.
+
+| Скрипт | Что делает |
+| --- | --- |
+| `stand-env.sh` | общий модуль: `CTX/NS/VALUES` по аргументу `k3d\|k3s`, `use_ctx`, `ensure_secret`, `port_forward` |
+| `stand-up.sh` | ns + Secret + `helm upgrade --install --atomic --wait --timeout 3m` |
+| `stand-smoke.sh` | pods/svc/pvc + `/live` `/releases` `/version` |
+| `stand-test.sh` | helm test → Phase + history |
+| `stand-status.sh` | history + pods + версия + UUID записей |
+
+Пароль генерируется при первом запуске (`openssl rand -hex 16`) в
+`~/.config/release-board/db.env` (chmod 600, вне git); Secret создаётся
+только если его нет в кластере.
+
+### Грабли этапа 6
+
+| Проявление | Причина | Решение |
+| --- | --- | --- |
+| `helm template` падал: YAML parse error в NetworkPolicy | `nindent 16` вместо 14 в `from:` поддокумента | `nindent 14` (уровень matchLabels под-уровня) |
+| kubeconform: `volumeClaimTemplates not allowed at /spec/template/spec` | отступ 6 пробелов — уровень контейнеров вместо уровня spec | отступ 2 пробела |
+| kubelet: «image has non-numeric user» в helm test | `runAsNonRoot` + именованный юзер `curl_user` образа curlimages/curl | pod-level `runAsUser: 100` |
+| Правки шаблонов «не применяются» | `helm test` берёт chart **из релиза**, не с диска | `helm upgrade` перед повторным test (rev 2–3) |
+| Первый SYN свежего пода — `Connection refused` (повторение этапа 4) | kube-router допрограммирует Pod в ipsets после старта контейнера | в тесте `curl --retry 8 --retry-connrefused --retry-delay 1` |
+| `helm test --logs` → «pod not found», exit ≠ 0 | `hook-succeeded` удаляет успешный test-под мгновенно | в `stand-test.sh`: вывод через `grep -E 'Phase:…' \|\| true` |
+| `POST /releases` → 422 «Field required: environment» | API требует `environment`, а не `env` (грабль этапа 5 повторился) | поле `environment` в запросе |
+
+### Итоги этапа 6
+
+- Chart построен и проверен (lint, template→kubeconform, негативный
+  schema-тест); оба стенда подняты одним и тем же chart'ом:
+  k3d — сценарий релиза п.1–8 пройден, k3s — install + test + ребут VM
+  с сохранением данных.
+- Версия Helm 3.20.2 зафиксирована в `docs/environment.md`.
+- Изменения этапа: `deploy/helm/release-board/` (17 файлов),
+  `scripts/stand-*.sh`, `scripts/README.md`, таргеты `stand-*` в
+  `Makefile`, `docs/environment.md` (строка Helm), `docs/report.md`.
+
+---
+
+## Этапы 7–8
 
 Записи добавляются по мере выполнения.
