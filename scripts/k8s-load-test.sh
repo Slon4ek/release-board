@@ -9,6 +9,8 @@ set -euo pipefail
 
 NS="${NS:-release-board-raw}"
 SVC="${SVC:-release-board-api}"
+# Лейблы Pod'ов различаются: raw-стенд — app=<svc>, helm-стенд — app.kubernetes.io/*
+LABEL_SELECTOR="${LABEL_SELECTOR:-app=$SVC}"
 IMG="${IMG:-curlimages/curl:8.9.1}"
 TOTAL="${TOTAL:-30}"
 KILL_AFTER="${KILL_AFTER:-10}"
@@ -50,7 +52,7 @@ for i in \$(seq 1 $TOTAL); do
 done
 echo DONE"
 
-VICTIM=$(kubectl get pod -n "$NS" -l app="$SVC" \
+VICTIM=$(kubectl get pod -n "$NS" -l "$LABEL_SELECTOR" \
   --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[0].metadata.name}')
 echo "→ после $KILL_AFTER-го запроса удаляем: $VICTIM"
 wait_for "^$KILL_AFTER " || exit 1
