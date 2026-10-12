@@ -3,6 +3,13 @@
 Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версионирование: [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.1.1] - 2026-10-12
+
+### Fixed
+- `scripts/k8s-load-test.sh`: выбор Pod-жертвы по настраиваемому
+  `LABEL_SELECTOR` — на helm-стенде лейблы `app.kubernetes.io/*`,
+  жёсткий `app=$SVC` не находил Pod'ов и скрипт падал.
+
 ## [1.1.0] - 2026-10-10
 
 Релиз первого полного стенда: Helm chart, стенды k3d/k3s, скрипты.
