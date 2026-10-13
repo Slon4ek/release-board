@@ -55,18 +55,18 @@ URL: `https://github.com/Slon4ek/release-board`.
 История `main` линейна, каждый срез ложится одним squash-коммитом с номером PR.
 Merge-коммитов нет.
 
-| SHA | Назначение | PR |
-| --- | --- | --- |
-| `256773e` | bootstrap: только `.gitignore`, базовая ветка для первого PR | — |
-| `819b1fe` | инфраструктура, конфигурация, базовый CI | [#1](https://github.com/Slon4ek/release-board/pull/1) |
-| `4ec8fbf` | передача pyright абсолютного пути интерпретатора | [#3](https://github.com/Slon4ek/release-board/pull/3) |
-| `ebd3f9c` | конфигурация, подключение к БД, зависимости | [#2](https://github.com/Slon4ek/release-board/pull/2) |
-| `07a0f15` | модель Release, схемы, начальная миграция | [#4](https://github.com/Slon4ek/release-board/pull/4) |
-| `59cd029` | HTTP API, сервисный слой, обработка доменных ошибок | [#5](https://github.com/Slon4ek/release-board/pull/5) |
-| `5424302` | отчёт, ADR, окружение | [#6](https://github.com/Slon4ek/release-board/pull/6) |
-| `29fd6a0` | тесты DELETE и 409, сверка миграции с моделью, шаг Test в CI, отчёт | [#7](https://github.com/Slon4ek/release-board/pull/7) |
-| `7da226f` | разделение lock-файлов, CI: concurrency, timeout, GIT_SHA, кэш pip; `BASE_DIR` для `.env`; `logger.exception` в `/ready`; `make install-dev` | [#8](https://github.com/Slon4ek/release-board/pull/8) |
-| `59afb8d` | `CONTRIBUTING.md`, шаблон PR, `README.md` | [#9](https://github.com/Slon4ek/release-board/pull/9) |
+| SHA | Назначение | PR                                                      |
+| --- | --- |---------------------------------------------------------|
+| `256773e` | bootstrap: только `.gitignore`, базовая ветка для первого PR | —                                                       |
+| `819b1fe` | инфраструктура, конфигурация, базовый CI | [#1](https://github.com/Slon4ek/release-board/pull/1)   |
+| `4ec8fbf` | передача pyright абсолютного пути интерпретатора | [#3](https://github.com/Slon4ek/release-board/pull/3)   |
+| `ebd3f9c` | конфигурация, подключение к БД, зависимости | [#2](https://github.com/Slon4ek/release-board/pull/2)   |
+| `07a0f15` | модель Release, схемы, начальная миграция | [#4](https://github.com/Slon4ek/release-board/pull/4)   |
+| `59cd029` | HTTP API, сервисный слой, обработка доменных ошибок | [#5](https://github.com/Slon4ek/release-board/pull/5)   |
+| `5424302` | отчёт, ADR, окружение | [#6](https://github.com/Slon4ek/release-board/pull/6)   |
+| `29fd6a0` | тесты DELETE и 409, сверка миграции с моделью, шаг Test в CI, отчёт | [#7](https://github.com/Slon4ek/release-board/pull/7)   |
+| `7da226f` | разделение lock-файлов, CI: concurrency, timeout, GIT_SHA, кэш pip; `BASE_DIR` для `.env`; `logger.exception` в `/ready`; `make install-dev` | [#8](https://github.com/Slon4ek/release-board/pull/8)   |
+| `59afb8d` | `CONTRIBUTING.md`, шаблон PR, `README.md` | [#9](https://github.com/Slon4ek/release-board/pull/9)   |
 | `3e33dff` | README: `make test-db` в таблице команд; CONTRIBUTING: предупреждение о перезаписи файлов `make format` — squash ветки `feature/api` | [#10](https://github.com/Slon4ek/release-board/pull/10) |
 | `0538926` | `logger.exception` → `logger.debug` в `/ready` | [#11](https://github.com/Slon4ek/release-board/pull/11) |
 | `eba9367` | `git revert 0538926`: возврат `logger.exception` в `/ready` | [#12](https://github.com/Slon4ek/release-board/pull/12) |
@@ -83,8 +83,9 @@ Merge-коммитов нет.
 | `f44535d` | Chart: поддержка image.digest (деплой по неизменяемому digest) | [#23](https://github.com/Slon4ek/release-board/pull/23) |
 | `9d39dfb` | отчёт (этап 7: CI и релиз v1.1.0) | [#24](https://github.com/Slon4ek/release-board/pull/24) |
 | `2b04e1f` | Hotfix: выбор жертвы нагрузочного теста по селектору лейблов (линия 1.1.x) | [#25](https://github.com/Slon4ek/release-board/pull/25) |
-| `12af380` | Релиз 1.1.1: синхронизация версий chart/app/Makefile (вершина release/1.1) | — (коммит ветки, не PR) |
+| `12af380` | Релиз 1.1.1: синхронизация версий chart/app/Makefile (вершина release/1.1) | — (коммит ветки, не PR)                                 |
 | `9c58706` | Hotfix 1.1.1 перенесён в main (forwardport) | [#26](https://github.com/Slon4ek/release-board/pull/26) |
+| `08b8cf2` | docs: этап 8 — четыре инцидента, runbook восстановления БД, отчёт | [#27](https://github.com/Slon4ek/release-board/pull/27) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.
@@ -1157,3 +1158,29 @@ kubectl config get-contexts → k3d-release-board (текущий), k3s-release-
   метрики, владельца и критерии отказа.
 - Изменения этапа в репозитории: `docs/runbooks/database-recovery.md`,
   этот раздел отчёта — один PR.
+
+---
+
+## Итоговый технический отчёт
+
+| Пункт | Значение                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --- |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| URL репозитория без учётных данных | `https://github.com/Slon4ek/release-board` — паролей и токенов в URL нет, доступ ключами/токенами GitHub (§Шапка)                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Защита `main` и тариф | Ruleset (Active, `main`): запрет удаления и force-push, обязательный PR, required check **`check`**, «ветка обновлена», только squash; одобрение намеренно не требуется (работа в одиночку). Репозиторий публичный — ограничений тарифа на эти настройки нет (§Этап 2, «Защита `main`»)                                                                                                                                                                                                                                     |
+| PR: обычное / revert / hotfix / forward-port | обычное: #21–#24, #27 · revert: #12 (`eba9367`) · hotfix: #25 (`2b04e1f`) · forward-port: #26 (`9c58706`); полная таблица — в начале отчёта                                                                                                                                                                                                                                                                                                                                                                                 |
+| Команды проверок, коды, SHA, результат | `make lint` → 0 · `make typecheck` → 0 · `make test` → 0 (`72 passed in 0.60s`); каждый PR проходил CI-job `check` (Lint/Typecheck/Test на `postgres:16`); SHA каждого изменения — в таблице срезов (§Шапка), короткий SHA уходит в `/version`                                                                                                                                                                                                                                                                              |
+| Версии инструментов, digest, revisions | Python 3.12.15 · Git 2.53.0 · Docker 29.8.2 · k3d 5.9.0 (k3s v1.35.5-k3s1) · kubectl 1.35.9 · Helm 3.20.2 · Trivy 0.75.0 · pytest 9.1.1 (`docs/environment.md`); образ развёрнут по digest `sha256:ab58e992bee6…` (§Этап 7); Helm revisions: стенд — до `11`, лаборатория инцидентов — `1–5`                                                                                                                                                                                                                                |
+| Причины четырёх инцидентов и восстановление | **A**: несуществующий тег → `ErrImagePull` → ImagePullBackOff, фикс по digest · **B**: битый readiness → `Ready=False` → в EndpointSlice `ready: false` → нет DNAT → `000` · **C**: неверный `DB_HOST` → `/live 200` при `/ready 503`, пароля в логах нет · **D**: удалено 5 строк из 20, `helm rollback` не вернул. **Восстановление**: `pg_dump` → новая база → 20/20, sha256 идентичны, `diff` пуст, 80 с до конца restore / 176 с до подтверждения; приложение переключено, исходные 15 строк и PVC сохранены (§Этап 8) |
+
+| Вопрос | Ответ |
+| --- | --- |
+| Commit, branch, tag, remote-tracking branch | **Commit** — неизменяемый снимок истории с SHA. **Branch** — подвижная ссылка на коммит. **Tag** — метка на коммит (аннотированный — отдельный объект, пушится отдельной командой). **`origin/main`** — локальная копия ветки на сервере, обновляется только `fetch` и сама не двигается. На практике: этап 2 (non-fast-forward, reflog), этап 7 (`v1.1.0`, `v1.1.1`) |
+| Когда merge, rebase, revert, reset | **rebase** — перенос *неопубликованных* локальных коммитов, линейная история (этап 2, п.3). **merge** — соединение историй; публичный путь проекта — squash через PR. **revert** — публичная отмена обратным коммитом, история не переписывается (PR #12). **reset** — локальный откат указателя; на remote это force-push, запрещённый ruleset'ом. Сравнение состояний и проверок — `docs/runbooks/git-recovery.md` |
+| Deployment, ReplicaSet, Pod, Service, EndpointSlice | **Deployment** задаёт шаблон и стратегию, управляет **ReplicaSet**'ами (новый шаблон = новый RS); RS держит **Pod**'ы. **Service** даёт ClusterIP и DNS, **EndpointSlice** — адреса подов по Pod condition `Ready`; kube-proxy программирует DNAT только для `ready: true`. Путь запроса: DNS → ClusterIP → DNAT → Pod. Разрыв цепочки — инцидент B; та же механика в норме — инцидент 4 этапа 4 |
+| Readiness vs liveness vs startup | **Startup** — «процесс поднялся» (до успеха остальные пробы ждут). **Readiness** — «могу обрабатывать трафик»: выводит из балансировки, но не перезапускает. **Liveness** — «процесс жив»: рестарт контейнера. Внешние зависимости — только на readiness, иначе петля рестартов. Проект: startup/liveness `/live`, readiness `/ready` (`SELECT 1`); инцидент C — `200` и `503` у одного пода |
+| Requests и limits | **Requests** — для планировщика: под встаёт на ноду с заявленным запасом, иначе `Pending`. **Limits** — для работающего контейнера: CPU — throttling, память — OOMKill. Проект: cpu 50m/500m, memory 96Mi/256Mi, класс Burstable (§Этап 4, доказательство 8) |
+| Где k3d заканчивается и начинается k3s | **k3d** поднимает k3s нодами-контейнерами в docker; его граница — docker-хост (volume'ы, проброс портов, `k3d cluster delete` удаляет всё — лаборатория этап 8). **k3s** — сам дистрибутив (один бинарник, containerd, sqlite): у нас на VM под systemd, переживает ребут (§Этап 5). Общее — объекты и kubectl; разница — контекст, поэтому первая команда — `kubectl config current-context` |
+| Какие части k3s server и agent запускают | Один бинарник, два режима. **Server** совмещает control-plane (apiserver, scheduler, controller-manager), datastore (sqlite через kine) и worker-часть (kubelet, kube-proxy, containerd, flannel, CoreDNS/Traefik/local-path/metrics-server). **Agent** — только worker-часть. Agent-узлов нет, всё на `k3s-vm` без taint (§Этап 5, «Роли k3s server и agent») |
+| Какие данные хранит Helm release | Secret `sh.helm.release.v1.<name>.v<N>`: отрендеренные манифесты, **все** значения (values + `--set`, включая чувствительные), история и статусы ревизий. Данных приложения (БД, PVC) там **нет** — см. следующий пункт |
+| Почему rollback workload ≠ восстановление базы | Rollback читает только Helm-секрет и переписывает манифесты; PVC с данными PostgreSQL в state релиза не входит. На стенде: два отката — строк осталось `15`. Лечит только backup → restore в новую базу → сверка → переключение (§Этап 8, D) |
+| Как подтвердить исправление после инцидента | Шаблон этапа 8: (1) симптом закрыт **той же командой**, что его показала; (2) независимая вторая проверка на другом уровне стека; (3) отрицательный контроль — без фикса не работает (рестарт, rollback); (4) зафиксированы время и владелец решения (§Этап 8, «Как подтвердить исправление после инцидента») |
