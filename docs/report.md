@@ -81,6 +81,10 @@ Merge-коммитов нет.
 | `aeded65` | Helm chart этапа 6 (стенды k3d/k3s), скрипты stand-*, make-таргеты, отчёт (этап 6), environment.md (Helm 3.20.2) | [#21](https://github.com/Slon4ek/release-board/pull/21) |
 | `648eddb` | Релиз 1.1.0: CHANGELOG, версии chart/app/Makefile; CI: 6 стадий, артефакты для SemVer-тега | [#22](https://github.com/Slon4ek/release-board/pull/22) |
 | `f44535d` | Chart: поддержка image.digest (деплой по неизменяемому digest) | [#23](https://github.com/Slon4ek/release-board/pull/23) |
+| `9d39dfb` | отчёт (этап 7: CI и релиз v1.1.0) | [#24](https://github.com/Slon4ek/release-board/pull/24) |
+| `2b04e1f` | Hotfix: выбор жертвы нагрузочного теста по селектору лейблов (линия 1.1.x) | [#25](https://github.com/Slon4ek/release-board/pull/25) |
+| `12af380` | Релиз 1.1.1: синхронизация версий chart/app/Makefile (вершина release/1.1) | — (коммит ветки, не PR) |
+| `9c58706` | Hotfix 1.1.1 перенесён в main (forwardport) | [#26](https://github.com/Slon4ek/release-board/pull/26) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.
@@ -922,8 +926,234 @@ workload должен ссылаться на digest.
   `image.digest` в chart — PR #22 и #23.
 
 ---
+## Ветка поддержки и hotfix
 
+Дата работ: 2026-10-12. Пункты ТЗ: строки 165–178 (п. 1–7), выполнены
+после этапа 7.
 
-## Этап 8
+### Сценарий и что получилось
 
-Записи добавляются по мере выполнения.
+Линия `release/1.1` отпочковалась от тега `v1.1.0`, получила hotfix и
+закрылась; фикс перенесён в `main` отдельным PR.
+
+```text
+648eddb ── v1.1.0 ── 2b04e1f (фикс) ── 12af380 ── v1.1.1 ── [release/1.1 удалена]
+   │                                                линия 1.1.x
+   └── f44535d (#23) ── 9d39dfb (#24) ── 9c58706 (#26 forwardport) ── [main]
+```
+
+| П. ТЗ | Выполнено |
+| --- | --- |
+| 1. main уходит вперёд | Проверено: `main` впереди тега на 2 коммита (#23, #24) — отдельного изменения не потребовалось |
+| 2. `release/1.1` от тега → push | `git branch release/1.1 v1.1.0` → push; Ruleset: restrict deletions, block force pushes, require PR + check `check` |
+| 3. `hotfix/1.1.1`, проверяемая ошибка, PR → squash | Ошибка: `k8s-load-test.sh` выбирал жертву по жёсткому `app=$SVC`, на helm-стенде лейблы `app.kubernetes.io/*` → пустой селектор, падение. Фикс: `LABEL_SELECTOR` с дефолтом прежнего поведения. PR #25 → squash `2b04e1f` |
+| 4. аннотированный тег `v1.1.1`, отдельный push, проверка в интерфейсе | Тег на `12af380` (вершина линии), push отдельной командой, `ls-remote` подтверждает; release-job CI зелёный |
+| 5. `fix/forwardport-1.1.1` от `main`, cherry-pick, отдельный PR | Перенесён только фикс `2b04e1f` (версионный коммит линии — нет). PR #26 → squash `9c58706` в `main` |
+| 6. удалить `hotfix/1.1.1` и `release/1.1`, `fetch --prune` в обоих клонах | Удалены локально и на сервере; prune в `release_board` и `release-board-2`; Ruleset на удалённую ветку убран |
+| 7. runbook сравнения команд | Выполнен ранее — PR #16 (`docs/runbooks/git-recovery.md`) |
+
+### Функциональная проверка фикса
+
+Прогон на helm-стенде k3s (ns `release-board-k3s`, лейблы
+`app.kubernetes.io/*`):
+
+```text
+LABEL_SELECTOR=app.kubernetes.io/name=release-board scripts/k8s-load-test.sh
+→ после 10-го запроса удаляем: release-board-api-67b8c554b9-rtt5t
+успехов (200): 30
+ошибок (FAIL): 0
+```
+
+До фикса на том же стенде `kubectl get pod -l app=release-board-api` →
+`No resources found` — баг воспроизводился детерминированно. Дефолт
+`LABEL_SELECTOR=app=$SVC` равен прежней строке — raw-стенд без
+изменений.
+
+### Итоги
+
+- Полный цикл ветки поддержки отработан на реальном фиксе: ветка
+  линии → hotfix → PR/squash → тег → forwardport → закрытие веток.
+- Имена обязательных проверок (`check`) и правила squash merge
+  действовали на `release/1.1` так же, как на `main` — линия
+  поддержки не была «дырой» в защите.
+- CI release-job впервые отказал в выпуске и обоснованно — это была
+  не поломка CI, а неполный релиз со стороны релизёра.
+- Изменения этапа в репозитории: `scripts/k8s-load-test.sh` (фикс),
+  `CHANGELOG.md`/`Makefile`/`Chart.yaml`/`values.yaml` (версии 1.1.1)
+  — PR #25, #26.
+
+---
+
+## Этап 8. Диагностика и восстановление
+
+Дата работ: 2026-10-13. Пункты ТЗ: строки 338–364. Все четыре
+инцидента воспроизведены во временном k3d-кластере `incidents`
+(контекст `k3d-incidents`, неймспейс `release-board-incidents`),
+после инцидентов лаборатория раскатана.
+
+### Лаборатория (ТЗ, строки 338–339)
+
+```text
+k3d cluster create incidents -p 8081:80 --registry-create k3d-incidents-registry:0.0.0.0:5002
+namespace release-board-incidents + secret release-board-db (пароль openssl rand -hex 16)
+локальный образ 1.1.0 → mirror k3d-incidents-registry:5002
+helm upgrade --install ... --set image.tag=1.1.0 --atomic   → REVISION 1
+GET /live 200, GET /version {"version":"1.1.0","git_sha":"648eddb"}  ← стартовое состояние
+```
+
+### Инцидент A: ImagePullBackOff (ТЗ, строка 340)
+
+| Шаг | Что сделано и что получено |
+| --- | --- |
+| Гипотеза | Несуществующий тег образа → kubelet не может получить манифест |
+| Наблюдение | `kubectl get pods` → `ImagePullBackOff`; `describe` → Events: `manifest unknown` / `ErrImagePull`, `Back-off 21s`; перезапуск Pod не помогает (тот же pull) |
+| Команды | `kubectl set image deploy/release-board-api ...=release-board:9.9.9-not-exist` (слом мимо helm); `describe pod` |
+| Причина | registry отвечает NotFound → ErrImagePull → экспоненциальный back-off. Rolling update держал старые поды, трафик не прерывался |
+| Исправление | `helm upgrade --set image.digest=sha256:ab58e992bee6...` → REVISION 3 deployed |
+| Проверка | `rollout status` → успешно; `imageID` обоих подов = `@sha256:ab58e992...`; `/live` `{"status":"alive"}`, `/version` `{"version":"1.1.0","git_sha":"648eddb"}` |
+
+`helm upgrade --set image.tag=9.9.9` сломал бы и pre-upgrade
+хук миграции (общий `imageRef`) — слом только через `kubectl set image`
+или `--no-hooks`.
+
+### Инцидент B: трафик не приходит к Pod (ТЗ, строка 342)
+
+| Шаг | Что сделано и что получено |
+| --- | --- |
+| Гипотеза | Разойдутся readiness пода и маршрут Service (probe или labels) |
+| Наблюдение | JSON-патч readiness `/ready` → `/wrong-path`: новый под `0/1`, condition `Ready=False (ContainersNotReady)`, в EndpointSlice его адрес `ready: false`, старые поды `ready: true`; при стратегии Recreate все адреса `ready: false` → изнутри кластера `000` (DNAT-правила нет); рестарт подов не помогает — новый под из того же шаблона |
+| Команды | `kubectl patch deployment --type=json` (слом/фикс пути probe), `--type=strategic` (Recreate), `get endpointslice ... grep -B4 'ready:'`, `kubectl run tmp-curl ... curl -w '%{http_code}'` |
+| Причина | kubelet помечает контейнер неготовым → endpoints убирает адрес из EndpointSlice → kube-proxy не программирует DNAT → connection refused. Лечит только правка конфигурации, не перезапуск |
+| Исправление | патч probe обратно на `/ready` + `type: RollingUpdate` (`rollingUpdate` после Recreate возвращается `op:"add"`) |
+| Проверка | `rollout status` → `successfully rolled out`; slice `ready: true`; tmp-curl → `200` |
+
+Грабли: селектор по
+`instance=` ловит и slice postgres (точный —
+`kubernetes.io/service-name=release-board-api`); первый `000` — гонка
+netpol (лечится `--retry-connrefused`), слом даёт стабильный `000`
+после всех ретраев.
+
+### Инцидент C: ошибочная конфигурация (ТЗ, строка 344)
+
+| Шаг | Что сделано и что получено |
+| --- | --- |
+| Гипотеза | Неверный адрес базы в ConfigMap при живом процессе |
+| Наблюдение | `patch configmap DB_HOST=release-board-postgres-typo` + рестарт подов: `/live` → `200`, `/ready` → `503`; в логах `psycopg.OperationalError: connection to server at "198.20.0.34" ... server closed the connection unexpectedly` рядом с `GET /live 200 OK` |
+| Команды | `kubectl patch configmap`, `delete pod`, port-forward + `curl -w '%{http_code}'` на `/live` и `/ready`, `logs -l ... \| grep -ci 'DB_PASSWORD\|password='` → `0` |
+| Причина | DSN указывает мимо postgres → readiness (`SELECT 1`) падает → 503; `/live` от БД не зависит. В traceback есть хост/порт, но нет пароля — секрет не логируется |
+| Исправление | `DB_HOST` обратно на `release-board-postgres` + рестарт (env читается при старте) |
+| Проверка | `wait --for=condition=Ready pod` → мет-condition; `/live 200`, `/ready 200`; grep пароля в логах → `0` |
+
+Грабль: ошибка резолва пришла не как NXDOMAIN — ndots:5 прогоняет
+search-домены, «голое» имя уходит в upstream-DNS провайдера, wildcard
+даёт parking-IP. Порт-форвард, переживший смерть пода, врёт `000`
+при полностью здоровом стенде — перед проверкой `pkill -f port-forward`.
+
+### Инцидент D: потеря данных (ТЗ, строки 346–364)
+
+Сценарий по пунктам ТЗ:
+
+| П. ТЗ | Выполнено |
+| --- | --- |
+| 1. ≥20 записей с известными UUID | `INSERT ... generate_series(1,20)`: UUID `00000000-0000-4000-8000-000000000001..0020`, фиксированные service/version/environment/status/created_at; API отдаёт `20` |
+| 2. логический backup + checksum | t0 = `08:46:55Z`; `pg_dump -Fc` → `canonical.dump` (3773 B), sha256 `33122558da36...cd544`; канонический снимок полей `canonical.tsv` (20 строк), sha256 `0c7c1118ee02...85bd` |
+| 3. удалить строки | `DELETE ... BETWEEN ...0001 AND ...0005` → `DELETE 5`; API → `15` |
+| 4. helm rollback не вернёт | два отката (`helm rollback` и `helm rollback 3`), после обоих — `15` |
+| 5. t1 + restore в новую базу | t1 = `09:03:06Z`; `createdb release_board_restore` (исходную не трогаем); `pg_restore --exit-on-error` из canonical.dump; t2 = `09:04:26Z` → **80 с**; `count(*)` → `20` |
+| 6. сверка + окончание | `restored.tsv` тем же запросом: sha256 **совпадает** с canonical (`0c7c1118...`), `diff` → `IDENT: 0 различий`, `wc -l` → 20 (count + UUID + все предметные поля); окончание проверки `09:06:02Z` (**176 с** от t1) |
+| 7. переключить экземпляр | патч Secret `DB_NAME=release_board_restore` (base64, пароль не трогаем) + рестарт подов → API отдаёт `20` (id ...0001–...0020); исходная база — `15`, её PVC сохранён |
+
+Грабль: `helm rollback` **без индекса** идёт на предыдущий **номер**
+ревизии, а не на последнюю успешную — откат ушёл на failed-ревизию 2
+(битый тег инцидента A) → rollout завис в ImagePullBackOff; лечится
+явным номером `helm rollback <release> 3`. Время удаления строк (t_del)
+зафиксировано не было — в runbook вынесено как обязательная метка.
+
+### Почему rollback workload не равен восстановлению базы (ТЗ, строка 388)
+
+Helm хранит манифесты, значения и историю релизов (secret
+`sh.helm.release.v1.*`); данные PostgreSQL живут на PVC и в state
+релиза не входят. `helm rollback` пересоздаёт/откатывает только
+объекты манифестов и не читает том вообще — на стенде после двух
+откатов строк осталось `15`. Единственный путь к данным — логический
+backup + `pg_restore` в **новую** базу + сверка + переключение;
+rollback полезен только чтобы вернуть корректную конфигурацию
+workload'ов (и то — на явный номер успешной ревизии).
+
+### Runbook и метрики восстановления (ТЗ, строка 364)
+
+`docs/runbooks/database-recovery.md`: порядок «фиксация → почему
+rollback не лечит → backup/checksum → restore в новую базу → сверка
+count/UUID/полей → переключение через Secret», у каждой команды —
+вопрос, который она закрывает.
+
+| Показатель | Значение |
+| --- | --- |
+| Целевой RPO | периодичность логического backup: лаборатория — по требованию; прод-рекомендация — ежесуточный `pg_dump` → RPO ≤ 24 ч |
+| Целевой RTO | ≤ 30 мин (restore + сверка + переключение) |
+| Фактическое время восстановления | 80 с (09:03:06Z → 09:04:26Z) |
+| Фактическое время до подтверждения | 176 с (t1 → t3 09:06:02Z) |
+| Потеря относительно момента backup | 0 записей (после backup записей не создавалось); до restore фактически потеряно 5 строк из 20 — восстановлены полностью |
+| Владелец решения о переключении | владелец проекта (единолчно), только после сверки без расхождений |
+| Критерии отказа от восстановления | не сошёлся checksum дампа; ошибка `pg_restore`; любое расхождение count/UUID/полей; не уложились в RTO → отказ, работа на текущей базе |
+
+### Как подтвердить исправление после инцидента (ТЗ, строка 389)
+
+Единый шаблон, отработанный на всех четырёх инцидентах:
+
+1. **Симптом закрыт** — та же команда диагностики, что его показала,
+   теперь даёт норму: A — `imageID` = digest, B — `200` из кластера,
+   C — `/ready 200`, D — `count(*) = 20`.
+2. **Независимая вторая проверка** — другой уровень стека: поды и
+   slice (B), EndpointSlice и curl из пода (B), логи и grep секрета
+   (C), sha256 + `diff` канонического снимка (D).
+3. **Отрицательный контроль** — показать, что лечится именно фикс:
+   рестарт без правки конфига не помогает (B, C), rollback не возвращает
+   данные (D).
+4. **Время и владелец** — метки t0/t1/t2/t3 и решение о переключении
+   зафиксированы до, а не после проверки.
+
+### Грабли этапа 8
+
+- k3d: `--registry-create` (не `--registry-name`), `.localhost`-имена
+  mirror'ов в incidents не работают, kubeconfig `0.0.0.0` требует
+  прокси/`set-cluster`.
+- `--type=strategy` → `strategic`; JSON-альтернатива — `op:replace` +
+  `op:remove`; после удаления `rollingUpdate` возвращать через `op:add`.
+- Селекторы: `-l app.kubernetes.io/instance=` захватывает соседние
+  объекты — для EndpointSlice точный ключ `kubernetes.io/service-name`.
+- Гонка netpol даёт единичный `000` сразу после старта пода —
+  отличать от поломки по ретраям (`--retry-connrefused`).
+- `helm rollback` без индекса → предыдущий номер ревизии, включая
+  failed; port-forward переживает смерть пода и отвечает `000`.
+- env из ConfigMap/Secret фиксируется при старте пода — без рестарта
+  патч не виден.
+
+### Очистка лаборатории
+
+```text
+k3d cluster delete incidents → Successfully deleted cluster incidents!
+  (ноды, сеть, volume, запись cluster/context в kubeconfig удалены самим k3d)
+docker ps -a | grep k3d-incidents → 0 контейнеров
+kubectl config delete-cluster/delete-context k3d-incidents → not in config (уже удалены k3d)
+kubectl config unset users.k3d-incidents → unset
+kubectl config get-contexts → k3d-release-board (текущий), k3s-release-board (ВМ, этап 5) — incidents нет
+артефакты инцидента D сохранены вне git: ~/.config/release-board/canonical.dump (3773 B),
+  canonical.tsv и restored.tsv (1721 B, sha256 идентичны)
+```
+
+### Итоги этапа 8
+
+- Четыре инцидента (A–D) воспроизведены, диагностированы и закрыты:
+  причины — битая ссылка на образ, рассинхрон probe и EndpointSlice,
+  неверный DSN в ConfigMap, удаление строк; для каждого зафиксированы
+  гипотеза, наблюдение, команды, причина, фикс и проверка (FLOW.md
+  8.1–8.4).
+- Backup → restore в новую базу → побайтовая сверка прошли без
+  расхождений (20/20, sha256 идентичны), приложение переключено на
+  восстановленную базу, исходная копия (15 строк) и PVC сохранены.
+- Rollback workload доказательно не равен восстановлению данных;
+  runbook `docs/runbooks/database-recovery.md` фиксирует RPO/RTO,
+  метрики, владельца и критерии отказа.
+- Изменения этапа в репозитории: `docs/runbooks/database-recovery.md`,
+  этот раздел отчёта — один PR.
