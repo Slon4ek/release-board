@@ -1,0 +1,41 @@
+vulnerabilities:
+  # --- Группа A: фикса нет в Debian (status: affected / fix_deferred) ---
+  # util-linux (bsdutils, libblkid, libmount, libuuid, login, mount...)
+  - id: CVE-2026-76642
+    description: "util-linux: privileged X-mount post-hooks — фикса в Debian нет, ждём"
+    expiring_at: 2026-12-01
+  - id: CVE-2026-78408
+    description: "util-linux: nsenter --join-cgroup — фикса в Debian нет, ждём"
+    expiring_at: 2026-12-01
+  - id: CVE-2026-78409
+    description: "util-linux: X-mount.subdir symlink escape — фикса в Debian нет, ждём"
+    expiring_at: 2026-12-01
+  - id: CVE-2026-78410
+    description: "util-linux: restricted bind mounts — фикса в Debian нет, ждём"
+    expiring_at: 2026-12-01
+  # libacl1
+  - id: CVE-2026-54369
+    description: "acl: symlink traversal — фикса в Debian нет, ждём"
+    expiring_at: 2026-12-01
+  # ncurses (libncursesw6, libtinfo6, ncurses-base/bin)
+  - id: CVE-2025-69720
+    description: "ncurses: buffer overflow в утилитах — фикса в Debian нет, ждём"
+    expiring_at: 2026-12-01
+  # systemd (libsystemd0, libudev1)
+  - id: CVE-2026-16742
+    description: "systemd-homed privilege escalation — фикса в Debian нет, ждём"
+    expiring_at: 2026-12-01
+  # perl-base
+  - id: CVE-2026-9538
+    description: "perl-Archive-Tar DoS — status fix_deferred, ждём"
+    expiring_at: 2026-12-01
+
+  # --- Группа B: фикс в Debian есть, но ещё не в закреплённом digest ---
+  # официальный образ собран с deb13u2, фикс в deb13u3; при следующем
+  # обновлении digest базы убираем эти записи
+  - id: CVE-2026-103111
+    description: "pcre2: OOB write — пересмотр: пин на новый digest базы (deb13u3)"
+    expiring_at: 2026-11-01
+  - id: CVE-2026-84782
+    description: "openssl: DTLS info disclosure — пересмотр: пин на новый digest базы (deb13u3)"
+    expiring_at: 2026-11-01

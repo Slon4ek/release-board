@@ -70,8 +70,8 @@ jobs:
       - name: Test
         run: make test
 
-  # Сборка образа + скан. Намеренно падает при HIGH/CRITICAL (остаток
-  # разобран в docs/report.md, этап 3) — merge не держит, виден в пайплайне.
+  # Сборка образа + скан. Падает при HIGH/CRITICAL, не прошедших
+  # .trivyignore.yaml (у каждой записи expiring_at — срок пересмотра).
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -91,7 +91,9 @@ jobs:
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${{ github.workspace }}/.trivy:/root/.cache \
+            -v ${{ github.workspace }}/.trivyignore.yaml:/workspace/.trivyignore.yaml:ro \
             aquasec/trivy:0.75.0 image --exit-code 1 \
+            --ignorefile /workspace/.trivyignore.yaml \
             --severity HIGH,CRITICAL $IMAGE:$TAG
 
   # Проверка chart'а: lint + рендер через kubeconform закреплённой версии.
