@@ -15,7 +15,6 @@ permissions:
   contents: read
 
 jobs:
-  # Ворота merge (Ruleset требует check). Lint + typecheck + тесты.
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -47,10 +46,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
           cache: pip
@@ -81,7 +80,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Build image
         run: make docker-build IMAGE=$IMAGE TAG=$TAG
@@ -106,7 +105,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install kubeconform
         run: |
@@ -126,18 +125,19 @@ jobs:
             | kubeconform -strict -summary -kubernetes-version ${K8S_VERSION}
 
   # Упаковка OCI-архивов — ТОЛЬКО для SemVer-тега.
-  # Не зависит от docker: известный остаток Trivy не должен блокировать релиз.
+  # Зависит от docker: без зелёного скана (после .trivyignore.yaml)
+  # релизные артефакты не собираются.
   release:
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [check, helm]
+    needs: [check, docker, helm]
     env:
       IMAGE: release-board
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Version from tag
         run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
@@ -166,7 +166,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-${{ env.APP_VERSION }}
           path: |

@@ -1,0 +1,10 @@
+# Обновление закреплённых в ci.yml actions (uses: ...@<sha> # vN):
+# Dependabot сам поднимает пин до новых релизов и присылает PR.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
