@@ -10,6 +10,7 @@
 | `scripts/stand-smoke.sh k3d` | Smoke: состав стенда (pods/svc/pvc) + `GET /live`, `/releases`, `/version` |
 | `scripts/stand-test.sh k3d` | `helm test --logs` → Phase + последние ревизии `helm history` |
 | `scripts/stand-status.sh k3d` | Быстрый срез: helm history, pods, `/version`, UUID записей Release |
+| `scripts/stand-cleanup.sh` | Очистка стенда: аргумент не нужен — берёт текущий контекст. `k3d-release-board` → кластер + registry целиком; `k3s-release-board` → только неймспейсы проекта (VM остаётся); чужой контекст → отказ `exit 1` |
 | `scripts/stand-env.sh k3d` | Общий модуль (его source'ят остальные скрипты; сам запускать не нужно) |
 | `scripts/k8s-load-test.sh` | Нагрузочный тест ТЗ (этап 4, п.7): 30 запросов к `/live` с убийством Pod'а на 10-м. По умолчанию — raw-стенд (`NS=release-board-raw`); переменными `NS`/`SVC` переключается на любой стенд |
 
@@ -27,6 +28,9 @@ scripts/stand-status.sh k3s      # что за ревизия/версия се�
 - **Контекст/стенд.** `k3d` → контекст `k3d-release-board`, ns `release-board-helm`;
   `k3s` → контекст `k3s-release-board`, ns `release-board-k3s`. Chart берётся
   из `deploy/helm/release-board` с нужными values (`values-k3d.yaml` / `values-k3s.yaml`).
+- **Очистка.** `scripts/stand-cleanup.sh` не переключает контекст сам —
+  наоборот, сверяет текущий с `k3d-release-board`/`k3s-release-board` и
+  отказывается работать на чужом. Вывод команд — в stdout, копируется в отчёт.
 - **Secret.** Пароль генерируется один раз (`openssl rand -hex 16`) и хранится в
   `~/.config/release-board/db.env` (chmod 600, **вне git**). Повторные запуски
   переиспользуют файл; если Secret уже есть в кластере — ничего не пересоздаётся.
