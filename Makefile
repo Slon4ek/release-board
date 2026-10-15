@@ -1,6 +1,6 @@
 PYTHON := $(shell if [ -x "$(CURDIR)/.venv/bin/python" ]; then echo "$(CURDIR)/.venv/bin/python"; else command -v python3 || echo python3; fi)
 
-.PHONY: help install install-dev lint format typecheck test test-unit test-integration check all migrate-up migrate-down test-db docker-build docker-run docker-version docker-stop docker-scan stand-up-k3d stand-up-k3s stand-smoke-k3d stand-smoke-k3s stand-test-k3d stand-test-k3s stand-status-k3d stand-status-k3s
+.PHONY: help install install-dev lint format typecheck test test-unit test-integration check all migrate-up migrate-down test-db docker-build docker-run docker-version docker-stop docker-scan stand-up-k3d stand-up-k3s stand-smoke-k3d stand-smoke-k3s stand-test-k3d stand-test-k3s stand-status-k3d stand-status-k3s stand-cleanup
 
 help:
 	@echo "Команды:"
@@ -30,6 +30,7 @@ help:
 	@echo "  make stand-test-k3d   — helm test k3d"
 	@echo "  make stand-status-k3s — быстрый срез k3s"
 	@echo "  make stand-status-k3d — быстрый срез k3d"
+	@echo "  make stand-cleanup    — очистить стенд по текущему контексту (k3d целиком / k3s неймспейсы)"
 
 install:
 	$(PYTHON) -m pip install -r requirements.lock
@@ -98,3 +99,4 @@ stand-test-k3d:   ; scripts/stand-test.sh k3d
 stand-test-k3s:   ; scripts/stand-test.sh k3s
 stand-status-k3d: ; scripts/stand-status.sh k3d
 stand-status-k3s: ; scripts/stand-status.sh k3s
+stand-cleanup:    ; scripts/stand-cleanup.sh
