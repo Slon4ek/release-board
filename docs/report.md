@@ -9,6 +9,32 @@ URL: `https://github.com/Slon4ek/release-board`.
 
 ---
 
+## Карта требований → разделы отчёта → доказательства
+
+Первая навигационная таблица по замечанию проверяющего: где что доказано.
+
+| Требование ТЗ | Раздел отчёта | Доказательство |
+| --- | --- | --- |
+| Свой репозиторий, лабораторные кластеры локальны (стр. 9–10) | §Шапка, §Этап 2 | `https://github.com/Slon4ek/release-board`; k3d/k3s запущены локально, в git только манифесты |
+| Контексты названы `k3d-release-board`/`k3s-release-board`, проверка контекста перед удалением | §Этап 9, «Финальная очистка» | `scripts/stand-cleanup.sh`: guard читает `kubectl config current-context`, сверяет с двумя именами |
+| Очистка ограничена двумя именами, ошибка при другом контексте | §Этап 9 | Тест: `KUBECONFIG=/tmp/foreign.kubeconfig` → «чужой контекст», `exit=1`; пустой контекст → `exit=1` |
+| Учебные пароли в локальном файле вне git | §Этап 4 | `~/.config/release-board/db.env`, chmod 600, в `.gitignore` |
+| Не публиковать kubeconfig, токены, дампы, Secret | §Этап 2, §Этап 5, §Этап 8 | `git ls-files \| grep -i kubeconfig` — пусто; дамп `canonical.dump` — только локально |
+| Удалить лабораторные ресурсы, сохранить результат очистки | §Этап 9, «Финальная очистка» | Выводы `stand-cleanup.sh` обеих веток — в разделе ниже |
+| Этап 1: сервис и тесты | §Этап 1 | `make lint/typecheck/test` → 0, `72 passed`, срез `29fd6a0` |
+| Этап 2: удалённый репозиторий, стратегия веток | §Этап 2 | Таблица срезов (SHA + PR), ruleset Active |
+| Ветка поддержки и hotfix | §Ветка поддержки и hotfix | PR #25 (`2b04e1f`), revert #12, forward-port #26 (`9c58706`), тег `v1.1.1` |
+| Этап 3: контейнер | §Этап 3 | multi-stage Dockerfile, digest, healthcheck `/live`, скан Trivy |
+| Этап 4: манифесты в k3d | §Этап 4 | Доказательства 1–8 (EndpointSlice, PDB, durability_check), тест 30/30 |
+| Этап 5: отдельный k3s-кластер | §Этап 5 | `install.sh` SHA-256, готовность узла, reboot-доказательство (маркер пережил ребут) |
+| Этап 6: Helm chart и жизненный цикл релиза | §Этап 6 | Revisions стенда до `11`, сценарий релиза, `helm rollback` ≠ восстановление БД |
+| Этап 7: CI и выпуск версии | §Этап 7 | Пайплайн, тег `v1.1.0`, `SHA256SUMS`, артефакты по digest |
+| Этап 8: диагностика и восстановление | §Этап 8 | Причины инцидентов A–D, `canonical.dump`/`restored.tsv`, runbook `database-recovery.md` |
+| Итоговый технический отчёт (стр. 367–389) | §Итоговый технический отчёт | Таблица «укажи» (6 пунктов) и «объясни» (10 пунктов) |
+| Официальные материалы (стр. 391) | §Официальные материалы | Ссылки на документацию |
+
+---
+
 ## Этап 1. Сервис и тесты
 
 Проверки выполнены локально и подтверждены в `main`: сервис, тесты и CI с шагом
@@ -86,6 +112,12 @@ Merge-коммитов нет.
 | `12af380` | Релиз 1.1.1: синхронизация версий chart/app/Makefile (вершина release/1.1) | — (коммит ветки, не PR)                                 |
 | `9c58706` | Hotfix 1.1.1 перенесён в main (forwardport) | [#26](https://github.com/Slon4ek/release-board/pull/26) |
 | `08b8cf2` | docs: этап 8 — четыре инцидента, runbook восстановления БД, отчёт | [#27](https://github.com/Slon4ek/release-board/pull/27) |
+| `364b717` | docs: Итоговый отчёт — свод всех пунктов ТЗ таблицами | [#28](https://github.com/Slon4ek/release-board/pull/28) |
+| `2723173` | Docker: база slim-trixie без apt-get upgrade, `.trivyignore.yaml` — CI зелёный | [#29](https://github.com/Slon4ek/release-board/pull/29) |
+| `2e0ecc5` | ci: release зависит от скана, actions по SHA, dependabot weekly | [#30](https://github.com/Slon4ek/release-board/pull/30) |
+| `43b51fe` | fix: скрипт очистки стендов с guard'ом по контексту | [#31](https://github.com/Slon4ek/release-board/pull/31) |
+| `a958a0e` | feat: bootstrap-скрипт VM k3s (start-vm.sh) | [#32](https://github.com/Slon4ek/release-board/pull/32) |
+| `5c47bd8` | docs: scripts README — флаг --tmux в описании start-vm.sh | [#33](https://github.com/Slon4ek/release-board/pull/33) |
 
 Номер PR не совпадает с порядком слияния: PR с исправлением интерпретатора был
 открыт раньше, чем PR со схемой базы.
@@ -97,7 +129,7 @@ Merge-коммитов нет.
 - `Restrict deletions` — удаление ветки запрещено;
 - `Block force pushes` — перезапись истории запрещена;
 - `Require a pull request before merging` — прямые пушты невозможны;
-- `Require status checks to pass`, обязательная проверка `check`;
+- `Require status checks to pass`, обязательные проверки `check`, `docker`, `helm` (расширено 2026-10-14 — красный скан теперь блокирует мерж);
 - `Require branches to be up to date before merging`;
 - разрешён только squash как метод слияния.
 
@@ -108,6 +140,8 @@ Merge-коммитов нет.
 ### CI
 
 В `main` один job `check` с тремя шагами: `Lint`, `Typecheck`, `Test`.
+С 2026-10-14 (этап 9) в воротах мержа три job — `check`, `docker`
+(сборка образа + Trivy) и `helm`; job `release` зависит от всех трёх.
 Шаг `Test` поднимает сервис `postgres:16` (пользователь `postgres`/`postgres`,
 healthcheck `pg_isready`), задаёт переменные `MODE=TEST`,
 `DB_NAME=release_board_test`, `DB_HOST=localhost` и запускает `make test` с кодом
@@ -186,7 +220,7 @@ PR #8 (`7da226f`).
 `Dockerfile` — multi-stage, обе стадии от закреплённого базового образа:
 
 ```text
-python:3.12.14-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e
+python:3.12.14-slim-trixie@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
 ```
 
 Digest, а не тег: содержимое базы зафиксировано байт-в-байт, перезапись
@@ -197,9 +231,6 @@ Digest, а не тег: содержимое базы зафиксировано
   в образ не попадает: цель разделения lock-файлов из среза 8 выполнена.
 - **`runtime`**: копируется только готовый venv, `src/`, `migrations/`,
   `alembic.ini`. Ни pip, ни компиляторов, ни `.git`, ни `.env`, ни тестов.
-  Слой обновления ОС: `apt-get update && apt-get upgrade -y
-  --no-install-recommends && rm -rf /var/lib/apt/lists/*` (добавлен после
-  первого скана Trivy, см. ниже).
 - **Непривилегированный пользователь**: `useradd --system --uid 10001
   --no-create-home --shell /usr/sbin/nologin app`, далее `USER app`.
 - **Версия и Git SHA при сборке**: `--build-arg APP_VERSION=1.0.0
@@ -283,6 +314,10 @@ make docker-scan → aquasec/trivy:0.75.0 image --exit-code 1
 **Total 55 (HIGH: 53, CRITICAL: 2)** — perl-base закрыт. `make docker-scan`
 завершается с exit 1: команда настроена падать при остатке HIGH/CRITICAL,
 игнор запрещён.
+**Постскриптум 2026-10-14 (этап 9):** база образа переведена на
+slim-trixie, слой `apt-get upgrade` удалён; скан: **48 HIGH,
+0 CRITICAL** (было 5 CRITICAL), после `.trivyignore.yaml` — `Total: 0`,
+job `docker` впервые зелёный.
 
 Состав остатка по статусам: **`fixed` — 0** (догонять в репозитории нечего,
 обновление исчерпано), `affected` — 47, `fix_deferred` — 7,
@@ -485,7 +520,7 @@ kubeconform -strict -summary -kubernetes-version 1.35.5 <файл>
 
 | Параметр | Значение |
 | --- | --- |
-| Гипервизор | KVM: `qemu-system-x86_64` 10.2.1, запуск `-enable-kvm -cpu host -smp 2 -m 4096` (скрипт `start-vm.sh`, консоль `-nographic` в tmux) |
+| Гипервизор | KVM: `qemu-system-x86_64` 10.2.1, запуск `-enable-kvm -cpu host -smp 2 -m 4096` (скрипт [`scripts/start-vm.sh`](../scripts/start-vm.sh), в репозитории с PR #32; консоль `-nographic` в tmux) |
 | ОС | Ubuntu 24.04.5 LTS, kernel `6.8.0-146-generic` (в журнале при закрытии 5.1 — `6.8.0-142`; пакет `-146` установлен apt 2026-10-08 18:36 по `dpkg.log`, активен после ребута) |
 | CPU | 2 vCPU (`-smp 2`, Intel Core i5-12450H) |
 | RAM | 4096 MiB (`-m 4096` = ровно 4 ГБ; в госте видно ~3.8 GiB из-за firmware-резервов), swap 0 B |
@@ -917,7 +952,8 @@ workload должен ссылаться на digest.
 
 - Пайплайн из 6 стадий работает на push/PR/SemVer-тег; gate merge —
   только `check` (имя сохранено под Ruleset), Trivy-остаток виден, но
-  не блокирует.
+  не блокирует (на момент этапа 7; с 2026-10-14 gate — `check`,
+  `docker`, `helm`, остаток закрыт ignore'ом — см. «Этап 9»).
 - Релиз `v1.1.0`: аннотированный тег `5984bc80…` → коммит `648eddb`,
   Release с notes (изменения/миграция/откат), артефакты в Actions.
 - Артефакты развёрнуты на k3d **без пересборки**, деплой по digest
@@ -1161,12 +1197,78 @@ kubectl config get-contexts → k3d-release-board (текущий), k3s-release-
 
 ---
 
+## Этап 9. Доработки по замечаниям
+
+Замечания закрыты четырьмя PR и настройками
+GitHub; очистка лаборатории выполнена 2026-10-14.
+
+| Замечание | Что сделано | PR |
+| --- | --- | --- |
+| CI красный из-за Trivy, релиз без скана; неповторяемый `apt-get upgrade` | База `python:3.12.14-slim-trixie@sha256:f77ac9e44…` (CRITICAL 5 → 0), слой `apt-get upgrade` удалён, остаток в `.trivyignore.yaml` (10 CVE, `expiring_at` 2026-11-01/12-01), `release` → `needs: [check, docker, helm]` | #29 `2723173`, #30 `2e0ecc5` |
+| Процесс: закрепление действий | Все `uses:` по SHA с комментарием `# v7`, `.github/dependabot.yml` (github-actions, weekly) | #30 `2e0ecc5` |
+| Merge-ворота | Ruleset: required checks `check`, `docker`, `helm` (strict); репозитория: только squash (`allow_merge_commit=false`, `allow_rebase_merge=false`) | настройки 2026-10-14 |
+| Нет скрипта очистки стендов (ТЗ, стр. 11–12, 15) | `scripts/stand-cleanup.sh`: guard по текущему контексту (только `k3d-release-board`/`k3s-release-board`, чужой → `exit 1`); k3d — целиком, k3s — только неймспейсы проекта | #31 `43b51fe` |
+| Нет скрипта запуска VM, битая ссылка | `scripts/start-vm.sh`: зависимости, cloud-образ + SHA-256, overlay 50G, seed.iso, `--check`/`--tmux`, запрос каталога | #32 `a958a0e` |
+
+**Смена базы образа (сноска к этапу 3):** 2026-10-14 база переведена со
+`slim-bookworm` на `slim-trixie` (Debian 13, digest-pin), слой
+`apt-get upgrade` удалён — на digest-pinned базе он делал сборку
+невоспроизводимой. Скан на новой базе: **48 HIGH, 0 CRITICAL** (было 5
+CRITICAL); после `.trivyignore.yaml` — `Total: 0`, job `docker` зелёный.
+Формат ignore — YAML с `expiring_at`: по дате запись перестаёт
+действовать и CI снова упадёт, если проблема не решена.
+
+### Финальная очистка (ТЗ, стр. 15)
+
+Команды выполнялись 2026-10-14; VM поднята новым `scripts/start-vm.sh
+--tmux`, неймспейсы и стенд удалены, вывод сохранён.
+
+**k3s (контекст `k3s-release-board`), exit=0:**
+
+```text
+[stand-cleanup] контекст: k3s-release-board
+ns release-board-helm: не найден — пропуск
+namespace "release-board-raw" deleted
+[stand-cleanup] ns release-board-raw: удалён
+namespace "release-board-k3s" deleted
+[stand-cleanup] ns release-board-k3s: удалён
+[stand-cleanup] итог: неймспейсы проекта удалены, VM и k3s не тронуты
+```
+
+**k3d (контекст `k3d-release-board`), exit=0:**
+
+```text
+[stand-cleanup] контекст: k3d-release-board
+--- k3d cluster delete release-board
+INFO[0000] Deleting cluster 'release-board'
+INFO[0003] Deleting cluster network 'k3d-release-board'
+WARN[0003] Failed to delete cluster network 'k3d-release-board': ... active endpoints (name:"k3d-release-board-registry.localhost" ...)
+INFO[0003] Deleting 1 attached volumes...
+INFO[0003] Removing cluster details from default kubeconfig...
+INFO[0003] Successfully deleted cluster release-board!
+--- k3d registry delete k3d-release-board-registry.localhost
+[stand-cleanup] итог: кластер и registry удалены (контекст k3d снимает сам)
+```
+
+WARN объясним: k3d удаляет сеть раньше registry, тот ещё держал
+endpoint; после удаления registry сеть осталась осиротевшей и снята
+вручную: `docker network rm k3d-release-board`.
+
+**Контроль после очистки:** `k3d cluster list` и `k3d registry list`
+пусты; `docker ps` — только локальный PostgreSQL и посторонний контейнер
+`jackett` (скрипт их не трогает — работает только с двумя именами
+стендов); в kubeconfig остался контекст `k3s-release-board`; в кластере —
+только системные неймспейсы (`default`, `kube-*`). VM оставлена рабочей
+(решение: очищаем стенды, машину не выключаем).
+
+---
+
 ## Итоговый технический отчёт
 
 | Пункт | Значение                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | --- |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | URL репозитория без учётных данных | `https://github.com/Slon4ek/release-board` — паролей и токенов в URL нет, доступ ключами/токенами GitHub (§Шапка)                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Защита `main` и тариф | Ruleset (Active, `main`): запрет удаления и force-push, обязательный PR, required check **`check`**, «ветка обновлена», только squash; одобрение намеренно не требуется (работа в одиночку). Репозиторий публичный — ограничений тарифа на эти настройки нет (§Этап 2, «Защита `main`»)                                                                                                                                                                                                                                     |
+| Защита `main` и тариф | Ruleset (Active, `main`): запрет удаления и force-push, обязательный PR, required check **`check`**, **`docker`**, **`helm`**, «ветка обновлена», только squash; одобрение намеренно не требуется (работа в одиночку). Репозиторий публичный — ограничений тарифа на эти настройки нет (§Этап 2, «Защита `main`»)                                                                                                                                                                                                                                     |
 | PR: обычное / revert / hotfix / forward-port | обычное: #21–#24, #27 · revert: #12 (`eba9367`) · hotfix: #25 (`2b04e1f`) · forward-port: #26 (`9c58706`); полная таблица — в начале отчёта                                                                                                                                                                                                                                                                                                                                                                                 |
 | Команды проверок, коды, SHA, результат | `make lint` → 0 · `make typecheck` → 0 · `make test` → 0 (`72 passed in 0.60s`); каждый PR проходил CI-job `check` (Lint/Typecheck/Test на `postgres:16`); SHA каждого изменения — в таблице срезов (§Шапка), короткий SHA уходит в `/version`                                                                                                                                                                                                                                                                              |
 | Версии инструментов, digest, revisions | Python 3.12.15 · Git 2.53.0 · Docker 29.8.2 · k3d 5.9.0 (k3s v1.35.5-k3s1) · kubectl 1.35.9 · Helm 3.20.2 · Trivy 0.75.0 · pytest 9.1.1 (`docs/environment.md`); образ развёрнут по digest `sha256:ab58e992bee6…` (§Этап 7); Helm revisions: стенд — до `11`, лаборатория инцидентов — `1–5`                                                                                                                                                                                                                                |
