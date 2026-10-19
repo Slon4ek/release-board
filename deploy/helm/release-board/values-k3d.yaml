@@ -2,3 +2,7 @@
 image:
   repository: k3d-release-board-registry.localhost:5000/release-board
   pullPolicy: IfNotPresent
+
+kafka:
+  image:
+    repository: k3d-release-board-registry.localhost:5000/cp-kafka

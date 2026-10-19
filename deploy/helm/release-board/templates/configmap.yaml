@@ -9,3 +9,6 @@ data:
   MODE: {{ .Values.config.MODE | quote }}
   DB_HOST: {{ printf "%s-postgres" (include "release-board.fullname" .) | quote }}
   DB_PORT: "5432"
+  KAFKA_BOOTSTRAP_SERVERS: {{ printf "%s-kafka:9092" (include "release-board.fullname" .) | quote }}
+  RELAY_TOPIC: {{ .Values.kafka.topics.events.name | quote }}
+  DLQ_TOPIC: {{ .Values.kafka.topics.dlq.name | quote }}
