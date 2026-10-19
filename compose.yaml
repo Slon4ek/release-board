@@ -60,10 +60,10 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
-  # ── Приложение и воркеры: ОДИН образ release-board:1.1.0 — три команды ──
+  # ── Приложение и воркеры: ОДИН образ release-board:1.2.0 — три команды ──
   app:
     build: .
-    image: release-board:1.1.0
+    image: release-board:1.2.0
     container_name: release_board_app
     restart: unless-stopped
     env_file: .env                     # MODE, DB_*, KAFKA_* → в процесс
@@ -79,7 +79,7 @@ services:
 
   relay:
     build: .
-    image: release-board:1.1.0
+    image: release-board:1.2.0
     container_name: release_board_relay
     restart: unless-stopped
     command: python -m src.relay       # переопределяет CMD uvicorn из Dockerfile
@@ -98,7 +98,7 @@ services:
 
   notifier:
     build: .
-    image: release-board:1.1.0
+    image: release-board:1.2.0
     container_name: release_board_notifier
     restart: unless-stopped
     command: python -m src.notifier
