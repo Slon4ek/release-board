@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     DB_USER: str = "postgres"
     DB_PASSWORD: str = ""
     DB_NAME: str = "postgres"
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:29092"
+    RELAY_TOPIC: str = "release.events.v1"
+    DLQ_TOPIC: str = "release.events.dlq"
+    RELAY_POLL_INTERVAL_SEC: float = 1.0
+    RELAY_BATCH_SIZE: int = 50
 
     @property
     def DB_URL(self) -> str:
