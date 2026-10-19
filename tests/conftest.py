@@ -32,7 +32,7 @@ async def setup_db(check_mode) -> AsyncGenerator[None, None]:
 @pytest.fixture(autouse=True, scope="function")
 async def clean_db() -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
-        await conn.execute(text("TRUNCATE TABLE releases"))
+        await conn.execute(text("TRUNCATE TABLE releases, outbox_events, processed_events"))
     yield
 
 

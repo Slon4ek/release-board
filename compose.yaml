@@ -18,5 +18,103 @@ services:
       retries: 5
       start_period: 30s
 
+  # Confluent Kafka в режиме KRaft: одна нода играет broker + controller,
+  # ZooKeeper не нужен (KRaft = «координация внутри кластера» через quorum voters).
+  kafka:
+    image: confluentinc/cp-kafka:7.9.10
+    container_name: release_board_kafka
+    restart: unless-stopped
+    ports:
+      - "29092:29092"          # хост-клиенты (CLI с ноутбука) ходят на localhost:29092
+    environment:
+      # ── KRaft ──
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller      # одна нода = и брокер, и контроллер
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"        # фиксированный ID кластера (формат Confluent-пример)
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093 # «голосующие» контроллера: у нас один
+
+      # ── Слушатели: три «двери» в один брокер ──
+      # PLAINTEXT        — внутренний: контейнеры друг друга слышат как kafka:9092
+      # PLAINTEXT_HOST   — хостовый: ноутбук слышит localhost:29092 (проброшен наружу)
+      # CONTROLLER       — служебный KRaft-канал
+      KAFKA_LISTENERS: PLAINTEXT://:9092,PLAINTEXT_HOST://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # ── Однонодовый стенд: репликаций не будет ──
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1        # __consumer_offsets с 1 репликой
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0        # не ждать 3с при первом rebalance
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      # «брокер отвечает на свой API?» — единственный честный вопрос здоровью Kafka
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+  # ── Приложение и воркеры: ОДИН образ release-board:1.1.0 — три команды ──
+  app:
+    build: .
+    image: release-board:1.1.0
+    container_name: release_board_app
+    restart: unless-stopped
+    env_file: .env                     # MODE, DB_*, KAFKA_* → в процесс
+    environment:
+      DB_HOST: postgres                # environment ПОБЕЖДАЕТ env_file
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy     # ждём pg_isready, не «контейнер запущен»
+      kafka:
+        condition: service_healthy
+
+  relay:
+    build: .
+    image: release-board:1.1.0
+    container_name: release_board_relay
+    restart: unless-stopped
+    command: python -m src.relay       # переопределяет CMD uvicorn из Dockerfile
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092   # внутренний PLAINTEXT-слушатель (этап 0)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["NONE"]
+      disable: true
+
+  notifier:
+    build: .
+    image: release-board:1.1.0
+    container_name: release_board_notifier
+    restart: unless-stopped
+    command: python -m src.notifier
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["NONE"]
+      disable: true
+
 volumes:
   postgres_data:
+  kafka_data:

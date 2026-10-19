@@ -1,37 +1,59 @@
 PYTHON := $(shell if [ -x "$(CURDIR)/.venv/bin/python" ]; then echo "$(CURDIR)/.venv/bin/python"; else command -v python3 || echo python3; fi)
 
-.PHONY: help install install-dev lint format typecheck test test-unit test-integration check all migrate-up migrate-down test-db docker-build docker-run docker-version docker-stop docker-scan stand-up-k3d stand-up-k3s stand-smoke-k3d stand-smoke-k3s stand-test-k3d stand-test-k3s stand-status-k3d stand-status-k3s stand-cleanup start-vm
+.PHONY: help install install-dev lint format typecheck test test-unit test-integration \
+		check all migrate-up migrate-down test-db docker-build docker-run docker-version \
+		docker-stop docker-scan stand-up-k3d stand-up-k3s stand-smoke-k3d stand-smoke-k3s \
+		stand-test-k3d stand-test-k3s stand-status-k3d stand-status-k3s stand-cleanup start-vm \
+		.kafka-up kafka-stop kafka-logs kafka-topics kafka-create-topics kafka-consume kafka-reset-topics \
+		relay-run notifier-run kafka-consume-dlq compose-up compose-down compose-status compose-logs \
+		migrate-docker e2e-kafka
 
 help:
 	@echo "Команды:"
-	@echo "  make install           — установить runtime-зависимости"
-	@echo "  make install-dev       — установить зависимости для разработки (включая runtime)"
-	@echo "  make lint              — проверить стиль (без правок)"
-	@echo "  make format            — отформатировать код"
-	@echo "  make typecheck         — проверить типы (pyright)"
-	@echo "  make test              — все тесты"
-	@echo "  make test-unit         — только unit-тесты"
-	@echo "  make test-integration  — интеграционные тесты (API + ready + миграции)"
-	@echo "  make check             — lint + typecheck + test"
-	@echo "  make all               — format + check (перед коммитом)"
-	@echo "  make migrate-up        — применить миграции"
-	@echo "  make migrate-down      — откатить миграции"
-	@echo "  make test-db           — создать тестовую БД (для make test)"
-	@echo "  make docker-build      — собрать образ (APP_VERSION, GIT_SHA подставляются)"
-	@echo "  make docker-run        — запустить контейнер release-board на :8000"
-	@echo "  make docker-version    — GET /version из запущенного контейнера"
-	@echo "  make docker-stop       — остановить контейнер (SIGTERM)"
-	@echo "  make docker-scan       — Trivy: HIGH/CRITICAL по образу (закреплённая версия)"
-	@echo "  make stand-up-k3s     — поднять/обновить helm-стенд k3s"
-	@echo "  make stand-up-k3d     — поднять/обновить helm-стенд k3d"
-	@echo "  make stand-smoke-k3s  — smoke k3s (pods + /live /releases /version)"
-	@echo "  make stand-smoke-k3d  — smoke k3d (pods + /live /releases /version)"
-	@echo "  make stand-test-k3s   — helm test k3s"
-	@echo "  make stand-test-k3d   — helm test k3d"
-	@echo "  make stand-status-k3s — быстрый срез k3s"
-	@echo "  make stand-status-k3d — быстрый срез k3d"
-	@echo "  make stand-cleanup    — очистить стенд по текущему контексту (k3d целиком / k3s неймспейсы)"
-	@echo "  make start-vm         — bootstrap + запуск VM k3s (tmux); --check не запускает qemu"
+	@echo "  make install              — установить runtime-зависимости"
+	@echo "  make install-dev          — установить зависимости для разработки (включая runtime)"
+	@echo "  make lint                 — проверить стиль (без правок)"
+	@echo "  make format               — отформатировать код"
+	@echo "  make typecheck            — проверить типы (pyright)"
+	@echo "  make test                 — все тесты"
+	@echo "  make test-unit            — только unit-тесты"
+	@echo "  make test-integration     — интеграционные тесты (API + ready + миграции)"
+	@echo "  make check                — lint + typecheck + test"
+	@echo "  make all                  — format + check (перед коммитом)"
+	@echo "  make migrate-up           — применить миграции"
+	@echo "  make migrate-down         — откатить миграции"
+	@echo "  make test-db              — создать тестовую БД (для make test)"
+	@echo "  make docker-build         — собрать образ (APP_VERSION, GIT_SHA подставляются)"
+	@echo "  make docker-run           — запустить контейнер release-board на :8000"
+	@echo "  make docker-version       — GET /version из запущенного контейнера"
+	@echo "  make docker-stop          — остановить контейнер (SIGTERM)"
+	@echo "  make docker-scan          — Trivy: HIGH/CRITICAL по образу (закреплённая версия)"
+	@echo "  make stand-up-k3s         — поднять/обновить helm-стенд k3s"
+	@echo "  make stand-up-k3d         — поднять/обновить helm-стенд k3d"
+	@echo "  make stand-smoke-k3s      — smoke k3s (pods + /live /releases /version)"
+	@echo "  make stand-smoke-k3d      — smoke k3d (pods + /live /releases /version)"
+	@echo "  make stand-test-k3s       — helm test k3s"
+	@echo "  make stand-test-k3d       — helm test k3d"
+	@echo "  make stand-status-k3s     — быстрый срез k3s"
+	@echo "  make stand-status-k3d     — быстрый срез k3d"
+	@echo "  make stand-cleanup        — очистить стенд по текущему контексту (k3d целиком / k3s неймспейсы)"
+	@echo "  make start-vm             — bootstrap + запуск VM k3s (tmux); --check не запускает qemu"
+	@echo "  make kafka-up             — поднять Kafka (docker compose, KRaft)"
+	@echo "  make kafka-stop           — остановить контейнер Kafka (volume цел)"
+	@echo "  make kafka-logs           — хвост логов Kafka (Ctrl+C выходит)"
+	@echo "  make kafka-topics         — список топиков"
+	@echo "  make kafka-create-topics  — создать release.events.v1 и .dlq"
+	@echo "  make kafka-consume        — читать release.events.v1 с начала"
+	@echo "  make kafka-reset-topics — удалить и заново создать оба топика (чистый стенд)"
+	@echo "  make relay-run           — запустить relay (поллер outbox → Kafka)"
+	@echo "  make notifier-run        — запустить notifier (consumer, группа notifier)"
+	@echo "  make kafka-consume-dlq   — читать release.events.dlq с начала"
+	@echo "  make compose-up           — поднять весь стенд одним образом (build+up -d)"
+	@echo "  make compose-down         — остановить стенд (volume цел)"
+	@echo "  make compose-status       — ps: какие сервисы живы"
+	@echo "  make compose-logs         — логи всех сервисов (Ctrl+C выходит)"
+	@echo "  make migrate-docker       — alembic upgrade head В контейнере (свежая БД)"
+	@echo "  make e2e-kafka           — E2E живого стенда: релиз сквозь конвейер + DLQ"
 
 install:
 	$(PYTHON) -m pip install -r requirements.lock
@@ -104,3 +126,34 @@ stand-cleanup:    ; scripts/stand-cleanup.sh
 
 # ── VM (scripts/start-vm.sh) ──
 start-vm:        ; scripts/start-vm.sh
+
+# ── Kafka (docker compose, KRaft) ──
+kafka-up:            ; docker compose up -d kafka
+kafka-stop:          ; docker compose stop kafka
+kafka-logs:          ; docker compose logs -f kafka --tail 50
+kafka-topics:        ; docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+kafka-consume:       ; docker compose exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic release.events.v1 --from-beginning
+kafka-create-topics:
+	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic release.events.v1 --partitions 3 --replication-factor 1
+	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic release.events.dlq --partitions 1 --replication-factor 1
+kafka-reset-topics:
+	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --delete --if-exists --topic release.events.v1 --topic release.events.dlq
+	until ! docker compose exec -T kafka kafka-topics --list | grep -q 'release.events'; do sleep 1; done
+	$(MAKE) kafka-create-topics
+kafka-consume-dlq:
+	docker compose exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic release.events.dlq --from-beginning
+
+# ── Relay (поллер outbox → Kafka) ──
+relay-run:
+	$(PYTHON) -m src.relay
+
+notifier-run:
+	$(PYTHON) -m src.notifier
+
+# ── Стенд целиком (compose: postgres + kafka + app + relay + notifier) ──
+compose-up:     ; docker compose up -d --build
+compose-down:   ; docker compose down
+compose-status: ; docker compose ps
+compose-logs:   ; docker compose logs -f --tail 50
+migrate-docker: ; docker compose run --rm app alembic upgrade head
+e2e-kafka:      ; scripts/e2e-kafka.sh

@@ -3,7 +3,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import Release
+from src.events import EventType, ReleaseCreatedPayload, ReleaseStatusChangedPayload
+from src.models import OutboxEvent, Release
 from src.schemas import (
     VALID_TRANSITIONS,
     ReleaseEnvironment,
@@ -28,6 +29,22 @@ class InvalidStatusTransitionError(ReleaseServiceError):
         super().__init__(f"Cannot transition from {current.value} to {target.value}")
 
 
+async def _add_outbox_event(
+    db: AsyncSession,
+    *,
+    aggregate_id: uuid.UUID,
+    event_type: EventType,
+    payload: ReleaseCreatedPayload | ReleaseStatusChangedPayload,
+) -> None:
+    db.add(
+        OutboxEvent(
+            aggregate_id=aggregate_id,
+            event_type=event_type.value,
+            payload=payload.model_dump(mode="json"),
+        )
+    )
+
+
 async def create_release(
     db: AsyncSession,
     *,
@@ -37,6 +54,17 @@ async def create_release(
 ) -> Release:
     release = Release(service=service, version=version, environment=environment)
     db.add(release)
+    await _add_outbox_event(
+        db,
+        aggregate_id=release.id,
+        event_type=EventType.RELEASE_CREATED,
+        payload=ReleaseCreatedPayload(
+            service=service,
+            version=version,
+            environment=environment,
+            status=ReleaseStatus.PLANNED,
+        ),
+    )
     await db.commit()
     await db.refresh(release)
     return release
@@ -77,6 +105,18 @@ async def change_release_status(
     if target not in VALID_TRANSITIONS.get(current, set()):
         raise InvalidStatusTransitionError(current, target)
     release.status = target
+    await _add_outbox_event(
+        db,
+        aggregate_id=release.id,
+        event_type=EventType.RELEASE_STATUS_CHANGED,
+        payload=ReleaseStatusChangedPayload(
+            service=release.service,
+            version=release.version,
+            environment=release.environment,
+            previous_status=current,
+            new_status=target,
+        ),
+    )
     await db.commit()
     await db.refresh(release)
     return release

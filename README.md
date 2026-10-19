@@ -3,6 +3,8 @@
 HTTP API для учёта выпусков приложений. Сервис хранит релизы сервисов в
 PostgreSQL: валидирует SemVer, отслеживает статус деплоя по окружениям
 `dev`, `stage`, `prod` и переходы `planned → deployed → failed → rolled_back`.
+События релизов публикуются в Kafka через outbox-паттерн и обрабатываются
+нотификатором (см. «Событийная шина»).
 
 ## API
 
@@ -19,10 +21,34 @@ PostgreSQL: валидирует SemVer, отслеживает статус д�
 
 Документация и интерфейс Swagger UI доступны по адресу `/docs`.
 
+## Событийная шина
+
+События релизов уходят в Kafka через outbox-паттерн: запись в таблицу
+`outbox_events` выполняется в одной транзакции с релизом, поэтому API не
+зависит от доступности брокера.
+
+```text
+POST /releases → outbox_events → relay → Kafka (release.events.v1) → notifier
+                                                    │
+                              невалидные / после ретраев → Kafka (release.events.dlq)
+```
+
+| Сервис | Роль | Запуск |
+| --- | --- | --- |
+| `app` | HTTP API, пишет релизы и события в `outbox_events` | `python -m src.main` |
+| `relay` | переносит события из outbox в Kafka (`SKIP LOCKED`, `published_at`/`attempts`) | `make relay-run` |
+| `notifier` | faststream-подписчик: дедупликация по `processed_events`, отправка в DLQ при невалидности/сбое | `make notifier-run` |
+
+Доставка at-least-once: дубликаты гасит `processed_events`; сбой обработки
+нотификатор ретраит с нарастающей паузой (до 5 попыток), затем событие
+уходит в DLQ с причиной и переигрывается вручную. Проверка всего конвейера
+на живом стенде: `make e2e-kafka`.
+
 ## Стек
 
 Python 3.12 · FastAPI · SQLAlchemy 2 (async) · PostgreSQL · Alembic ·
-pydantic 2 · Ruff · pyright (strict) · pytest (72 теста)
+pydantic 2 · faststream · confluent-kafka · Ruff · pyright (strict) ·
+pytest (79 тестов)
 
 ## Быстрый старт
 
@@ -32,10 +58,10 @@ cd release-board
 python3 -m venv .venv && source .venv/bin/activate
 
 make install-dev                # зависимости из requirements-dev.lock
-cp .env.example .env            # доступы к PostgreSQL
+cp .env.example .env            # доступы к PostgreSQL и Kafka
 cp .env-test.example .env-test  # окружение тестов (MODE=TEST)
 
-docker compose up -d            # PostgreSQL 16
+docker compose up -d            # PostgreSQL 16 + Kafka (KRaft)
 make migrate-up                 # схема БД
 python -m src.main              # http://0.0.0.0:8000
 ```
@@ -63,6 +89,16 @@ make check     # lint + typecheck + test
 | `make test-db` | создать тестовую БД release_board_test (однократно) |
 | `make migrate-up` | применить миграции Alembic |
 | `make migrate-down` | откатить миграции Alembic |
+| `make kafka-up` / `kafka-stop` | запустить/остановить Kafka в compose |
+| `make kafka-topics` | список топиков |
+| `make kafka-consume` | читать `release.events.v1` с начала |
+| `make kafka-consume-dlq` | читать `release.events.dlq` с начала |
+| `make relay-run` | запустить relay локально |
+| `make notifier-run` | запустить нотификатор локально |
+| `make compose-up` / `compose-down` | весь стенд: PostgreSQL, Kafka, app, relay, notifier |
+| `make compose-status` / `compose-logs` | статус/логи стенда |
+| `make migrate-docker` | миграции внутри контейнера app |
+| `make e2e-kafka` | E2E: релиз → outbox → relay → Kafka → нотификатор → DLQ |
 
 ## Структура
 
@@ -71,17 +107,21 @@ release-board/
 ├── src/
 │   ├── api/            # роутеры и обработчики ошибок
 │   ├── services/       # прикладной слой
-│   ├── models.py       # ORM-модель Release
+│   ├── events/         # envelope-модели событий шины
+│   ├── relay/          # outbox → Kafka
+│   ├── notifier/       # Kafka → обработка / DLQ (faststream)
+│   ├── models.py       # ORM-модели Release, OutboxEvent, ProcessedEvent
 │   ├── schemas.py      # pydantic-схемы, правила переходов статусов
 │   ├── database.py     # engine и сессии
 │   ├── dependencies.py # зависимости FastAPI
 │   ├── config.py       # настройки из переменных окружения
 │   └── main.py         # сборка приложения
-├── tests/              # 72 теста: валидация, API, readiness, миграции
+├── tests/              # 79 тестов: валидация, API, readiness, миграции, relay, нотификатор
+├── scripts/            # e2e-kafka.sh, стендовые скрипты
 ├── migrations/         # ревизии Alembic
 ├── docs/               # отчёт, ADR, окружение
 ├── .github/workflows/  # CI: lint, typecheck, test
-├── compose.yaml        # PostgreSQL 16 для разработки
+├── compose.yaml        # PostgreSQL 16, Kafka, app, relay, notifier
 ├── Makefile
 └── pyproject.toml
 ```
@@ -97,5 +137,8 @@ release-board/
 
 Настройки читаются из переменных окружения, шаблон — `.env.example`:
 `MODE`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
+Шина событий: `KAFKA_BOOTSTRAP_SERVERS` (по умолчанию `localhost:29092`;
+в compose для контейнеров — `kafka:9092`), `RELAY_TOPIC`
+(`release.events.v1`), `DLQ_TOPIC` (`release.events.dlq`).
 Версия приложения и Git SHA для `/version` приходят через `APP_VERSION` и
 `GIT_SHA`. Файлы `.env` и `.env-test` не коммитятся — они в `.gitignore`.
