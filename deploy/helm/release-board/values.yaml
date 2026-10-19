@@ -35,6 +35,40 @@ postgres:
       cpu: 500m
       memory: 512Mi
 
+kafka:
+  image:
+    repository: confluentinc/cp-kafka
+    tag: "7.9.10"
+    pullPolicy: IfNotPresent
+  clusterId: "MkU3OEVBNTcwNTJENDM2Qk"
+  heapOpts: "-Xmx256M -Xms256M"
+  persistence:
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+  topics:
+    events:
+      name: release.events.v1
+      partitions: 3
+    dlq:
+      name: release.events.dlq
+      partitions: 1
+
+workers:
+  replicas: 1           # воркеры — консьюмеры с group_id; масштаб = партиции
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
 config:
   MODE: "DEV"                 # TEST / LOCAL / PROD — как в raw-стенде
 

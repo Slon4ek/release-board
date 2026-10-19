@@ -77,6 +77,77 @@
         }
       }
     },
+    "kafka": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "clusterId", "heapOpts", "persistence", "resources", "topics"],
+      "properties": {
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "tag", "pullPolicy"],
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$"
+            },
+            "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+          }
+        },
+        "clusterId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$"
+        },
+        "heapOpts": {
+          "type": "string",
+          "pattern": "^-Xm[xs][0-9]+[KMG]( -Xm[xs][0-9]+[KMG])?$"
+        },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["size"],
+          "properties": {
+            "size": { "type": "string", "pattern": "^[1-9][0-9]*(Mi|Gi)$" }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requests", "limits"],
+          "properties": {
+            "requests": { "$ref": "#/definitions/resourcesBlock" },
+            "limits": { "$ref": "#/definitions/resourcesBlock" }
+          }
+        },
+        "topics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["events", "dlq"],
+          "properties": {
+            "events": { "$ref": "#/definitions/topicBlock" },
+            "dlq": { "$ref": "#/definitions/topicBlock" }
+          }
+        }
+      }
+    },
+    "workers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicas", "resources"],
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requests", "limits"],
+          "properties": {
+            "requests": { "$ref": "#/definitions/resourcesBlock" },
+            "limits": { "$ref": "#/definitions/resourcesBlock" }
+          }
+        }
+      }
+    },
     "config": {
       "type": "object",
       "additionalProperties": false,
@@ -118,6 +189,18 @@
       "properties": {
         "cpu": { "type": "string", "pattern": "^[0-9]+m?$" },
         "memory": { "type": "string", "pattern": "^[0-9]+(Mi|Gi)$" }
+      }
+    },
+    "topicBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "partitions"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "partitions": { "type": "integer", "minimum": 1, "maximum": 32 }
       }
     }
   }

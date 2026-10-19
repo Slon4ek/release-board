@@ -1,0 +1,54 @@
+# Создание топиков: auto-create=false — решение этапа 0.
+# Хук post-install,pre-upgrade, weight 3 — до migrate-job (weight 5):
+# топики нужны раньше, чем relay/notifier начнут их читать.
+# --if-not-exists — идемпотентность повторных хуков.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "release-board.fullname" . }}-kafka-topics
+  labels:
+    {{- include "release-board.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-topics
+  annotations:
+    "helm.sh/hook": post-install,pre-upgrade
+    "helm.sh/hook-weight": "3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        {{- include "release-board.labels" . | nindent 8 }}
+        app.kubernetes.io/component: kafka-topics
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: create-topics
+          image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+          imagePullPolicy: {{ .Values.kafka.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              BS="{{ include "release-board.fullname" . }}-kafka:9092"
+              i=0
+              until timeout 10 kafka-topics --bootstrap-server "$BS" --list >/dev/null 2>&1; do
+                i=$((i+1))
+                if [ "$i" -ge 36 ]; then
+                  echo "kafka-topics: брокер не ответил за 3 минуты" >&2
+                  exit 1
+                fi
+                echo "kafka-topics: ждём брокер... попытка $i"
+                sleep 5
+              done
+              kafka-topics --bootstrap-server "$BS" --create --if-not-exists \
+                --topic {{ .Values.kafka.topics.events.name }} \
+                --partitions {{ .Values.kafka.topics.events.partitions }} \
+                --replication-factor 1
+              kafka-topics --bootstrap-server "$BS" --create --if-not-exists \
+                --topic {{ .Values.kafka.topics.dlq.name }} \
+                --partitions {{ .Values.kafka.topics.dlq.partitions }} \
+                --replication-factor 1
+              echo "--- топики:"
+              kafka-topics --bootstrap-server "$BS" --list

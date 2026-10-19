@@ -1,0 +1,21 @@
+# Брокер и его клиенты (relay/notifier, kafka-topics Job) ходят по DNS
+# сервиса: <fullname>-kafka:9092 — это же и есть advertised-адрес брокера.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "release-board.fullname" . }}-kafka
+  labels:
+    {{- include "release-board.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "release-board.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+  ports:
+    - name: plaintext
+      port: 9092
+      targetPort: 9092
+    - name: controller
+      port: 9093
+      targetPort: 9093
