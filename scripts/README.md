@@ -1,6 +1,7 @@
-# Шпаргалка: скрипты стенда (`scripts/stand-*.sh`)
+# Шпаргалка: скрипты (`scripts/*.sh`)
 
-Все команды запускаются из корня проекта. Аргумент — стенд: `k3d` или `k3s`.
+Все команды запускаются из корня проекта. Стендовые скрипты принимают
+аргумент — стенд: `k3d` или `k3s`.
 
 ## Команды
 
@@ -14,6 +15,7 @@
 | `scripts/stand-env.sh k3d` | Общий модуль (его source'ят остальные скрипты; сам запускать не нужно)                                                                                                                                                                                                                                                                                                                                                                                           |
 | `scripts/k8s-load-test.sh` | Нагрузочный тест ТЗ (этап 4, п.7): 30 запросов к `/live` с убийством Pod'а на 10-м. По умолчанию — raw-стенд (`NS=release-board-raw`); переменными `NS`/`SVC` переключается на любой стенд                                                                                                                                                                                                                                                                       |
 | `scripts/start-vm.sh` | Bootstrap и запуск VM k3s: зависимости qemu, скачивание cloud-образа + сверка SHA256SUMS, overlay qcow2 50G, проверка seed.iso, запуск (2 vCPU/4 ГБ, пробросы 2222→22, 6443→6443). `--check` — только проверки без запуска; `--tmux` — запуск в фоновой сессии tmux (VM переживает закрытие терминала; отвязка Ctrl+B, D; повторный запуск — подключение к живой сессии); `VM_DIR=...` — переопределить каталог (по умолчанию `/mnt/B4A692EBA692AD7C/vm/k3s-vm`) |
+| `scripts/e2e-kafka.sh` | E2E живого compose-стенда событийной шины: сервисы running → `POST /releases` → outbox → relay (`published_at`) → notifier (`processed_events`, NOTIFY в логе, LAG=0) → кривое сообщение в DLQ. Требует `make compose-up` и `.env`; эквивалент — `make e2e-kafka` |
 
 ## Примеры
 
@@ -22,6 +24,7 @@ scripts/stand-up.sh k3d          # первый запуск создаст ns, 
 scripts/stand-smoke.sh k3d       # проверить, что API отвечает
 scripts/stand-test.sh k3s        # прогнать helm test на VM
 scripts/stand-status.sh k3s      # что за ревизия/версия сейчас крутится
+scripts/e2e-kafka.sh             # сквозной прогон шины: релиз → Kafka → нотификатор → DLQ
 ```
 
 ## Как это работает
@@ -82,6 +85,30 @@ NS=release-board-helm scripts/k8s-load-test.sh   # helm-стенд (см. ого
 переменная `LABEL` сейчас не параметризована — для helm-стенда либо
 добавить в скрипт переменную `LABEL_SELECTOR`, либо править селектор
 руками. На этапе 8 (backup/restore) разберёмся.
+
+## E2E событийной шины (e2e-kafka.sh)
+
+```bash
+make compose-up    # PostgreSQL + Kafka + app + relay + notifier
+scripts/e2e-kafka.sh
+```
+
+Прогоняет весь конвейер вживую и печатает `E2E OK`, если все проверки
+прошли:
+
+1. сервисы `postgres`, `kafka`, `app`, `relay`, `notifier` в статусе running;
+2. `POST /releases` → ожидание до 20 с, пока событие пройдёт
+   `outbox_events → published_at (relay) → processed_events (notifier)`;
+3. строка `NOTIFY: created release ...` в логах notifier;
+4. `LAG=0` у консьюмер-группы `notifier`;
+5. негативная ветка: кривое сообщение `{"hello": 999}` в
+   `release.events.v1` → появляется в `release.events.dlq`
+   (original/error/failed_at).
+
+При падении печатает `FAIL: <шаг>` и подсказку диагностики
+(`docker compose logs --since 5m notifier`). Скрипту нужен `.env`
+(читает `DB_USER`/`DB_NAME` для psql-проверок) и docker compose стенд
+из корня проекта.
 
 ## Куда класть
 
