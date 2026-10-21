@@ -4,7 +4,7 @@
 
 image:
   repository: k3d-release-board-registry.localhost:5000/release-board
-  tag: "1.2.0"                # = appVersion Chart.yaml = TAG в Makefile
+  tag: "1.2.1"                # = appVersion Chart.yaml = TAG в Makefile
   pullPolicy: IfNotPresent
   digest: ""                  # если задан ("sha256:...") — приоритет над тегом
 

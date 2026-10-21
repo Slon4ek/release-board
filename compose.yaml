@@ -81,10 +81,10 @@ services:
           --topic "$${DLQ_TOPIC:?нет DLQ_TOPIC в .env}" --partitions 1 --replication-factor 1
         echo "--- топики:"; kafka-topics --bootstrap-server kafka:9092 --list
 
-  # ── Приложение и воркеры: ОДИН образ release-board:1.2.0 — три команды ──
+  # ── Приложение и воркеры: ОДИН образ release-board:1.2.1 — три команды ──
   app:
     build: .
-    image: release-board:1.2.0
+    image: release-board:1.2.1
     container_name: release_board_app
     restart: unless-stopped
     env_file: .env                     # MODE, DB_*, KAFKA_* → в процесс
@@ -102,7 +102,7 @@ services:
 
   relay:
     build: .
-    image: release-board:1.2.0
+    image: release-board:1.2.1
     container_name: release_board_relay
     restart: unless-stopped
     command: python -m src.relay       # переопределяет CMD uvicorn из Dockerfile
@@ -123,7 +123,7 @@ services:
 
   notifier:
     build: .
-    image: release-board:1.2.0
+    image: release-board:1.2.1
     container_name: release_board_notifier
     restart: unless-stopped
     command: python -m src.notifier
