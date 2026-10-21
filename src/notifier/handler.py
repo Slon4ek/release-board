@@ -15,7 +15,7 @@ from src.models import ProcessedEvent
 
 logger = logging.getLogger(__name__)
 
-broker = KafkaBroker(settings.KAFKA_BOOTSTRAP_SERVERS)
+broker = KafkaBroker(settings.KAFKA_BOOTSTRAP_SERVERS, allow_auto_create_topics=False)
 
 AnyEvent = Annotated[ReleaseCreated | ReleaseStatusChanged, Field(discriminator="event_type")]
 _event_adapter: TypeAdapter[AnyEvent] = TypeAdapter(AnyEvent)
