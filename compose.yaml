@@ -60,6 +60,27 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+# ── Создание топиков: auto-create=false, владеет деплой (аналог helm-джобы) ──
+  kafka-init:
+    image: confluentinc/cp-kafka:7.9.10
+    container_name: release_board_kafka_init
+    restart: "no"
+    env_file: .env
+    command:
+      - sh
+      - -ec
+      - |
+        i=0
+        until kafka-topics --bootstrap-server kafka:9092 --list >/dev/null 2>&1; do
+          i=$$((i + 1)); [ $$i -ge 30 ] && { echo "kafka не ответил за 60с" >&2; exit 1; }
+          sleep 2
+        done
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic "$${RELAY_TOPIC:?нет RELAY_TOPIC в .env}" --partitions 3 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic "$${DLQ_TOPIC:?нет DLQ_TOPIC в .env}" --partitions 1 --replication-factor 1
+        echo "--- топики:"; kafka-topics --bootstrap-server kafka:9092 --list
+
   # ── Приложение и воркеры: ОДИН образ release-board:1.2.0 — три команды ──
   app:
     build: .
@@ -76,6 +97,8 @@ services:
         condition: service_healthy     # ждём pg_isready, не «контейнер запущен»
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   relay:
     build: .
@@ -92,6 +115,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["NONE"]
       disable: true
@@ -111,6 +136,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["NONE"]
       disable: true
