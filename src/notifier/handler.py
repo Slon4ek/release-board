@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -19,6 +20,17 @@ broker = KafkaBroker(settings.KAFKA_BOOTSTRAP_SERVERS, allow_auto_create_topics=
 
 AnyEvent = Annotated[ReleaseCreated | ReleaseStatusChanged, Field(discriminator="event_type")]
 _event_adapter: TypeAdapter[AnyEvent] = TypeAdapter(AnyEvent)
+_retries: dict[str, int] = {}
+
+
+async def _safe_decode(message: Any) -> Any:
+    body = getattr(message, "body", message)
+    if isinstance(body, (bytes, bytearray)):
+        try:
+            return json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+            return body
+    return body
 
 
 async def _send_to_dlq(message: Any, reason: str) -> None:
@@ -37,8 +49,13 @@ async def _send_to_dlq(message: Any, reason: str) -> None:
     group_id="notifier",
     auto_offset_reset="earliest",
     ack_policy=AckPolicy.NACK_ON_ERROR,
+    decoder=_safe_decode,
 )
 async def handle_event(message: Any) -> None:
+    if isinstance(message, (bytes, bytearray)):
+        logger.error("invalid event -> dlq: %s", message)
+        await _send_to_dlq(message, reason="invalid JSON body")
+        return
     try:
         event = _event_adapter.validate_python(message)
     except ValidationError as exc:
@@ -47,7 +64,6 @@ async def handle_event(message: Any) -> None:
         return
 
     _MAX_RETRIES = 5
-    _retries: dict[str, int] = {}
 
     key = str(event.event_id)
     try:

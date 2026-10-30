@@ -2,7 +2,7 @@
 
 import uuid
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from faststream.confluent import TestKafkaBroker
 from sqlalchemy import func, select
@@ -16,7 +16,7 @@ from src.events import (
     ReleaseStatusChangedPayload,
 )
 from src.models import ProcessedEvent
-from src.notifier.handler import broker, handle_event
+from src.notifier.handler import _retries, broker, handle_event
 
 
 @broker.subscriber(settings.DLQ_TOPIC, group_id="test-dlq")
@@ -109,6 +109,24 @@ async def test_invalid_event_goes_to_dlq(db_session, monkeypatch) -> None:
     assert await _count_processed(db_session) == 0
 
 
+async def test_broken_json_goes_to_dlq(db_session, monkeypatch) -> None:
+    """Битый JSON: декодер ронялся до handle_event → NACK → tight-loop. Теперь → DLQ."""
+    notify = MagicMock()
+    monkeypatch.setattr("src.notifier.handler._notify", notify)
+
+    async with TestKafkaBroker(broker):
+        await broker.publish(b'{"broken":', topic=settings.RELAY_TOPIC)
+
+        notify.assert_not_called()
+        dlq_sink.mock.assert_called_once()
+        payload = dlq_sink.mock.call_args.args[0]
+
+    assert payload["original"] == '{"broken":'
+    assert payload["error"] == "invalid JSON body"
+    assert payload["failed_at"]
+    assert await _count_processed(db_session) == 0
+
+
 async def test_status_changed_is_processed(db_session, monkeypatch) -> None:
     """Вторая ветка discriminated union: release.status_changed тоже обрабатывается."""
     notify = MagicMock()
@@ -123,3 +141,26 @@ async def test_status_changed_is_processed(db_session, monkeypatch) -> None:
         dlq_sink.mock.assert_not_called()
 
     assert await db_session.get(ProcessedEvent, event.event_id) is not None
+
+
+async def test_five_failures_go_to_dlq(db_session, monkeypatch) -> None:
+    """Постоянная ошибка: 5 ретраев → DLQ, processed_events не заполнено, счётчик очищен."""
+    notify = MagicMock(side_effect=RuntimeError("boom"))
+    monkeypatch.setattr("src.notifier.handler._notify", notify)
+    monkeypatch.setattr("src.notifier.handler.asyncio.sleep", AsyncMock())
+    event = _release_created()
+
+    async with TestKafkaBroker(broker):
+        for _ in range(5):
+            try:
+                await handle_event(event)
+            except RuntimeError:
+                pass
+
+        assert notify.call_count == 5
+        dlq_sink.mock.assert_called_once()
+        payload = dlq_sink.mock.call_args.args[0]
+        assert "5 attempts" in payload["error"]
+
+    assert await _count_processed(db_session) == 0
+    assert _retries == {}
