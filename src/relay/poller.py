@@ -66,6 +66,6 @@ class Relay:
                 )
                 event.published_at = datetime.now(UTC)
                 event.attempts += 1
-                await session.commit()
                 published += 1
+            await session.commit()
             return published
